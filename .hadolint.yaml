@@ -1,7 +1,9 @@
 failure-threshold: warning
 
 ignored:
+  - DL3003  # cd used in checksum verification, not as directory switch
   - DL3041  # microdnf is the UBI-minimal package manager, not apt
+  - DL4006  # UBI-minimal /bin/sh does not support pipefail
 
 trustedRegistries:
   - registry.access.redhat.com
