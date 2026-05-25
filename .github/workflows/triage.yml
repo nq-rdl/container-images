@@ -1,0 +1,15 @@
+name: Triage
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  triage:
+    uses: nq-rdl/.github/.github/workflows/auto-triage.yml@main
+    with:
+      domain: RSE
+      lead: JoshKeoghTHHS
+    secrets: inherit
