@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Container image build artifacts
+*.tar
+*.tar.gz
+
+# Security scanning outputs
+*.sarif
+*.spdx.json
+.trivy/
+
+# Local build output
+_output/

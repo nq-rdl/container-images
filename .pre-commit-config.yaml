@@ -1,0 +1,44 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: hadolint
+        name: hadolint
+        entry: pixi run hadolint --config .hadolint.yaml
+        language: system
+        files: Containerfile$
+        types: [file]
+
+      - id: shellcheck
+        name: shellcheck
+        entry: pixi run shellcheck
+        language: system
+        types: [shell]
+
+      - id: actionlint
+        name: actionlint
+        entry: pixi run actionlint
+        language: system
+        files: \.github/workflows/.*\.yml$
+        pass_filenames: false
+
+      - id: gitleaks
+        name: gitleaks
+        entry: pixi run gitleaks protect --staged --config .gitleaks.toml
+        language: system
+        pass_filenames: false
+
+      - id: conftest
+        name: conftest (Containerfile policy)
+        entry: pixi run conftest test --policy policy/ --parser dockerfile
+        language: system
+        files: Containerfile$
+        types: [file]

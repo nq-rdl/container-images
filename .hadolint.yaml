@@ -1,0 +1,8 @@
+failure-threshold: warning
+
+ignored:
+  - DL3041  # microdnf is the UBI-minimal package manager, not apt
+
+trustedRegistries:
+  - registry.access.redhat.com
+  - registry.redhat.io

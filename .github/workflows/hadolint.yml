@@ -1,0 +1,24 @@
+name: Hadolint
+
+on:
+  pull_request:
+    paths: ['images/**/Containerfile']
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find Containerfiles
+        id: find
+        run: |
+          FILES=$(find images -name Containerfile -type f | tr '\n' ' ')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ steps.find.outputs.files }}
+          config: .hadolint.yaml
+          failure-threshold: warning

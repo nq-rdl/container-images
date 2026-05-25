@@ -1,0 +1,22 @@
+name: bun-ubi9
+description: Bun runtime on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/frontend
+platforms:
+  - linux/amd64
+  - linux/arm64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: bun
+  version: "1.1.42"
+tags:
+  - "1.1"
+  - "1.1.42"
+  - "latest"
+support:
+  status: stable
+  eol: "2026-12-31"

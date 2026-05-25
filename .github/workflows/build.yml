@@ -1,0 +1,142 @@
+name: Build Images
+
+on:
+  push:
+    branches: [main]
+    paths: ['images/**', '.github/workflows/build.yml']
+  pull_request:
+    paths: ['images/**', '.github/workflows/build.yml']
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Image name to build, or "all"'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  security-events: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.set-matrix.outputs.images }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: set-matrix
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" ]] \
+             || [[ "${{ github.event.inputs.image }}" == "all" ]]; then
+            IMAGES=$(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -print \
+                     | xargs -n1 basename \
+                     | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          elif [[ -n "${{ github.event.inputs.image }}" ]]; then
+            IMAGES='["${{ github.event.inputs.image }}"]'
+          else
+            BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+            CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- 'images/' \
+                       | cut -d/ -f2 | sort -u \
+                       | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            IMAGES="$CHANGED"
+          fi
+          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: discover
+    if: needs.discover.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.discover.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=ref,event=pr
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: images/${{ matrix.image }}
+          file: images/${{ matrix.image }}/Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ steps.build.outputs.imageid }}
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload Trivy results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+      - uses: sigstore/cosign-installer@v3
+        if: github.event_name != 'pull_request'
+
+      - name: Sign image (keyless)
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.image }}.spdx.json
+
+      - name: Attest SBOM
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+        run: |
+          cosign attest --yes \
+            --predicate sbom-${{ matrix.image }}.spdx.json \
+            --type spdxjson \
+            "${IMAGE}@${DIGEST}"
