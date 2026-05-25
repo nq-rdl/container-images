@@ -33,19 +33,25 @@ jobs:
           fetch-depth: 0
 
       - id: set-matrix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE: ${{ github.event.inputs.image }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "schedule" ]] \
-             || [[ "${{ github.event.inputs.image }}" == "all" ]]; then
+          if [[ "${EVENT_NAME}" == "schedule" ]] \
+             || [[ "${INPUT_IMAGE}" == "all" ]]; then
             IMAGES=$(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -print \
                      | xargs -n1 basename \
                      | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          elif [[ -n "${{ github.event.inputs.image }}" ]]; then
-            IMAGES='["${{ github.event.inputs.image }}"]'
+          elif [[ -n "${INPUT_IMAGE}" ]]; then
+            IMAGES=$(echo "${INPUT_IMAGE}" | jq -R -c '[.]')
           else
-            BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
-            CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- 'images/' \
+            CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD -- 'images/' \
                        | cut -d/ -f2 | sort -u \
+                       | while read -r dir; do
+                           [ -f "images/${dir}/Containerfile" ] && echo "${dir}"
+                         done \
                        | jq -R -s -c 'split("\n") | map(select(length > 0))')
             IMAGES="$CHANGED"
           fi
@@ -110,7 +116,7 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ github.event_name == 'pull_request' && steps.build-pr.outputs.imageid || format('ghcr.io/{0}/{1}@{2}', github.repository_owner, matrix.image, steps.build-push.outputs.digest) }}
           format: sarif

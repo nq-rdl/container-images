@@ -10,15 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find Containerfiles
-        id: find
+      - name: Install Hadolint
         run: |
-          FILES=$(find images -name Containerfile -type f | tr '\n' ' ')
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          curl -fsSL -o /usr/local/bin/hadolint \
+            "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64"
+          chmod +x /usr/local/bin/hadolint
 
       - name: Run Hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ${{ steps.find.outputs.files }}
-          config: .hadolint.yaml
-          failure-threshold: warning
+        run: find images -name Containerfile -exec hadolint --config .hadolint.yaml {} +
