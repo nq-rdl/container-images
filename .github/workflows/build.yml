@@ -81,13 +81,27 @@ jobs:
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - id: build
+      - id: build-pr
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: images/${{ matrix.image }}
+          file: images/${{ matrix.image }}/Containerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      - id: build-push
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: images/${{ matrix.image }}
           file: images/${{ matrix.image }}/Containerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
@@ -98,7 +112,7 @@ jobs:
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.24.0
         with:
-          image-ref: ${{ steps.build.outputs.imageid }}
+          image-ref: ${{ github.event_name == 'pull_request' && steps.build-pr.outputs.imageid || format('ghcr.io/{0}/{1}@{2}', github.repository_owner, matrix.image, steps.build-push.outputs.digest) }}
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
           severity: CRITICAL,HIGH
@@ -118,7 +132,7 @@ jobs:
       - name: Sign image (keyless)
         if: github.event_name != 'pull_request'
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
@@ -126,14 +140,14 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build-push.outputs.digest }}
           format: spdx-json
           output-file: sbom-${{ matrix.image }}.spdx.json
 
       - name: Attest SBOM
         if: github.event_name != 'pull_request'
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.build-push.outputs.digest }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
         run: |
           cosign attest --yes \

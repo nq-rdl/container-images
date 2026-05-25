@@ -24,7 +24,7 @@ jobs:
 
       - name: Run shellcheck
         run: |
-          if compgen -G "scripts/**/*.sh" > /dev/null 2>&1; then
+          if find scripts -name '*.sh' -print -quit | grep -q .; then
             find scripts -name '*.sh' -exec shellcheck {} +
           else
             echo "No shell scripts found, skipping."
