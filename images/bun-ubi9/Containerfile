@@ -14,7 +14,6 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 RUN microdnf install -y --nodocs \
         unzip \
-        curl \
         ca-certificates \
         glibc-langpack-en \
         shadow-utils \
