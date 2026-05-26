@@ -1,6 +1,6 @@
 # RDL Container Image Catalog
 
-UBI9-based container images for NQ RDL workloads. Built, scanned, signed, and SBOM-attested in CI.
+UBI9-based container images for Research Data Laboratory workloads. Built, scanned, signed, and SBOM-attested in CI.
 
 ## Available images
 
