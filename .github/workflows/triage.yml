@@ -1,0 +1,20 @@
+name: Triage
+
+permissions:
+  contents: read
+  packages: read
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+jobs:
+  triage:
+    if: github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: nq-rdl/.github/.github/workflows/auto-triage.yml@d9e70f7d2866e2c126660b924e4e5421e8dbaaba
+    with:
+      domain: Infrastructure
+      lead: rowdenbr
+    secrets: inherit
