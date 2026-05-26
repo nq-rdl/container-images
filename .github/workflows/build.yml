@@ -76,6 +76,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
       - name: Read image.yaml tags
         id: image-tags
         env:
@@ -86,14 +89,14 @@ jobs:
           TAGS=""
           if [ -f "${YAML}" ]; then
             while IFS= read -r tag; do
+              [ -z "${tag}" ] && continue
               [ "${tag}" = "latest" ] && continue
-              TAGS="${TAGS}type=raw,value=${tag},enable={{is_default_branch}}
-          "
-            done < <(yq -r '.tags[]' "${YAML}")
+              TAGS="$(printf '%s%s\n' "${TAGS}" "type=raw,value=${tag},enable={{is_default_branch}}")"
+            done < <(yq -r '(.tags // [])[]' "${YAML}")
           fi
           {
             echo 'custom_tags<<EOF'
-            echo "${TAGS}"
+            printf '%s' "${TAGS}"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
