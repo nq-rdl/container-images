@@ -1,0 +1,3 @@
+kind: Fixed
+body: Build workflow now applies semantic version tags from image.yaml instead of only SHA-based tags
+time: 2026-05-26T13:31:28.471607+10:00
