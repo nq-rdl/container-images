@@ -2,27 +2,33 @@
 name = "container-images"
 version = "0.0.1"
 description = "RDL container image catalog — build tooling"
+requires-python = ">=3.10"
+dependencies = [
+    "hadolint-py",
+]
+
+[tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
-[dependencies]
-hadolint = "*"
+[tool.pixi.dependencies]
+python = ">=3.10"
 shellcheck = "*"
 actionlint = "*"
-gitleaks = "*"
 conftest = "*"
 trivy = "*"
 pre-commit = "*"
 cosign = "*"
+zensical = ">=0.0.43,<0.0.44"
 
-[tasks]
+[tool.pixi.tasks]
 lint-containerfiles = "find images -name Containerfile -exec hadolint --config .hadolint.yaml {} +"
 lint-shell = "find scripts -name '*.sh' -exec shellcheck {} +"
 lint-actions = "actionlint"
-lint-secrets = "gitleaks detect --source . --config .gitleaks.toml"
+lint-secrets = "pre-commit run gitleaks --all-files"
 policy-check = "find images -name Containerfile -exec conftest test --policy policy/ --parser dockerfile {} +"
-pre-commit-install = "pre-commit install"
+pre-commit-install = "pre-commit install --hook-type pre-commit --hook-type pre-push"
 pre-commit-run = "pre-commit run --all-files"
 
-[tasks.lint-all]
+[tool.pixi.tasks.lint-all]
 depends-on = ["lint-containerfiles", "lint-shell", "lint-actions", "policy-check"]

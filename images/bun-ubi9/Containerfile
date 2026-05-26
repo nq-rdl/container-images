@@ -9,7 +9,7 @@ ARG TARGETARCH
 LABEL org.opencontainers.image.title="bun-ubi9"
 LABEL org.opencontainers.image.description="Bun ${BUN_VERSION} runtime on UBI9 minimal"
 LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
-LABEL org.opencontainers.image.vendor="NQ RDL Platform"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
 LABEL org.opencontainers.image.licenses="MIT"
 
 RUN microdnf install -y --nodocs \
