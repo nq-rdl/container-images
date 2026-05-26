@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Set COSIGN_EXPERIMENTAL=1 for cosign sign and attest steps to support oci-1-1 registry referrers mode'
+time: 2026-05-26T20:00:00.000000+00:00
