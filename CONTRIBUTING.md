@@ -3,11 +3,20 @@
 ## Prerequisites
 
 - [pixi](https://pixi.sh) — manages all dev tooling
-- `podman` or `docker` with buildx
+- `podman` or `docker` with buildx — container builds and smoke tests
+- [k3d](https://k3d.io) — lightweight Kubernetes for local smoke tests
+- `kubectl` — interacts with k3d clusters during smoke tests
+
+Install everything in one shot:
+
+```bash
+make install-deps
+```
 
 ## Getting started
 
 ```bash
+make install-deps                # install pixi, container runtime, k3d, kubectl
 pixi install
 pixi run pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
@@ -82,6 +91,7 @@ pixi run policy-check-image-meta   # image.yaml tag convention checks
 pixi run policy-check-workflow-tags # build workflow tag compliance
 pixi run lint-containerfiles       # hadolint only
 pixi run pre-commit-run            # all pre-commit hooks
+pixi run smoke-test                # build all images + k3d cluster test
 ```
 
 ## Changelog
@@ -98,8 +108,46 @@ A soft reminder appears on `git commit` if no fragment exists. On `git push`, th
 check is enforced — pushes are blocked until a fragment is added. If a PR genuinely
 needs no changelog entry, bypass with `SKIP_CHANGELOG=1 git push`.
 
+## Smoke tests
+
+On `git push`, a smoke test runs automatically (via pre-commit pre-push hook)
+that:
+
+1. **Builds every image** under `images/` with your container runtime
+   (docker or podman)
+2. **Creates a temporary k3d cluster**, imports the built images, and verifies
+   each one starts as a pod
+
+To run manually:
+
+```bash
+scripts/smoke-test.sh
+```
+
+To bypass on a push (e.g., docs-only change):
+
+```bash
+SKIP_SMOKE=1 git push
+```
+
 ## Pre-commit hooks
 
 Pre-commit runs automatically on `git commit` and `git push` after hook
 installation. Hooks include: hadolint, shellcheck, actionlint, gitleaks, conftest
-policy checks, changie fragment check, trailing whitespace, and end-of-file fixer.
+policy checks, changie fragment check, smoke tests, trailing whitespace, and
+end-of-file fixer.
+
+| Hook | Stage |
+|------|-------|
+| trailing-whitespace | commit |
+| end-of-file-fixer | commit |
+| check-yaml | commit |
+| check-merge-conflict | commit |
+| gitleaks | commit |
+| hadolint | commit |
+| shellcheck | commit |
+| actionlint | commit |
+| conftest | commit |
+| changie fragment reminder | commit |
+| changie fragment required | push |
+| smoke test (build + k3d) | push |
