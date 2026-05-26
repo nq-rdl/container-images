@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Remove non-standard SHA and schedule tags from build workflow, use OCI 1.1 referrers for cosign to stop polluting the packages page with .sig/.att sidecar artifacts'
+time: 2026-05-26T18:00:00.000000+10:00

@@ -24,8 +24,8 @@ jobs:
 
       - name: Run shellcheck
         run: |
-          if find scripts -name '*.sh' -print -quit | grep -q .; then
-            find scripts -name '*.sh' -exec shellcheck {} +
+          if find scripts tests -name '*.sh' -print -quit 2>/dev/null | grep -q .; then
+            find scripts tests -name '*.sh' -exec shellcheck {} +
           else
             echo "No shell scripts found, skipping."
           fi
