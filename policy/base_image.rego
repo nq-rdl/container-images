@@ -1,6 +1,6 @@
 package main
 
-deny[msg] {
+deny contains msg if {
 	input[i].Cmd == "from"
 	val := input[i].Value[0]
 	not startswith(val, "registry.access.redhat.com/ubi")

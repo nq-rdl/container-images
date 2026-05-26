@@ -9,7 +9,7 @@
 
 ```bash
 pixi install
-pixi run pre-commit-install
+pixi run pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
 ## Adding a new image
@@ -69,6 +69,7 @@ security rebuild updates the image behind the same tag.
 - Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`
 - Pin base image and runtime versions via `ARG`
 - Include OCI labels: `org.opencontainers.image.title`, `.description`, `.source`, `.vendor`, `.licenses`
+- Set `org.opencontainers.image.vendor` to `"Research Data Laboratory"` — this value must be consistent across all images
 - Consider using a non-root `USER` where the application supports it
 - Clean up package caches (`microdnf clean all`)
 
@@ -81,6 +82,20 @@ pixi run lint-containerfiles # hadolint only
 pixi run pre-commit-run      # all pre-commit hooks
 ```
 
+## Changelog
+
+Every PR must include a changie fragment describing the change. Run:
+
+```bash
+changie new
+```
+
+A soft reminder appears on `git commit` if no fragment exists. On `git push`, the
+check is enforced — pushes are blocked until a fragment is added. If a PR genuinely
+needs no changelog entry, add the `skip-changelog` label.
+
 ## Pre-commit hooks
 
-Pre-commit runs automatically on `git commit` after `pixi run pre-commit-install`. Hooks include: hadolint, shellcheck, actionlint, gitleaks, conftest policy checks, trailing whitespace, and end-of-file fixer.
+Pre-commit runs automatically on `git commit` and `git push` after hook
+installation. Hooks include: hadolint, shellcheck, actionlint, gitleaks, conftest
+policy checks, changie fragment check, trailing whitespace, and end-of-file fixer.
