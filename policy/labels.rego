@@ -20,3 +20,11 @@ deny contains msg if {
 	count(_missing) > 0
 	msg := sprintf("Missing required OCI labels: %v", [_missing])
 }
+
+deny contains msg if {
+	input[i].Cmd == "label"
+	input[i].Value[0] == "org.opencontainers.image.vendor"
+	val := trim(input[i].Value[1], "\"")
+	val != "Research Data Laboratory"
+	msg := sprintf("org.opencontainers.image.vendor must be \"Research Data Laboratory\", got: \"%s\"", [val])
+}
