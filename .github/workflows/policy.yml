@@ -4,6 +4,9 @@ on:
   pull_request:
     paths: ['images/**', 'policy/**', 'tests/**', '.github/workflows/build.yml', '.github/workflows/policy.yml']
 
+permissions:
+  contents: read
+
 jobs:
   conftest:
     runs-on: ubuntu-latest

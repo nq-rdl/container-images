@@ -4,6 +4,12 @@
 set -euo pipefail
 
 WORKFLOW="${1:-.github/workflows/build.yml}"
+
+if [ ! -r "$WORKFLOW" ]; then
+  echo "ERROR: workflow file not found or not readable: $WORKFLOW"
+  exit 1
+fi
+
 FAILURES=0
 
 fail() {
@@ -29,19 +35,22 @@ else
   pass "no type=schedule tags found"
 fi
 
+# Join backslash-continued lines so multiline cosign commands are matched as one
+WORKFLOW_JOINED=$(sed ':a; /\\$/ { N; s/\\\n[[:space:]]*/ /; ta }' "$WORKFLOW")
+
 # Test: cosign sign must exist and use OCI 1.1 referrers
-if ! grep -q 'cosign sign' "$WORKFLOW"; then
+if ! echo "$WORKFLOW_JOINED" | grep -q 'cosign sign'; then
   fail "cosign sign command not found in workflow"
-elif grep 'cosign sign' "$WORKFLOW" | grep -qF 'registry-referrers-mode=oci-1-1'; then
+elif echo "$WORKFLOW_JOINED" | grep 'cosign sign' | grep -qF 'registry-referrers-mode=oci-1-1'; then
   pass "cosign sign uses --registry-referrers-mode=oci-1-1"
 else
   fail "cosign sign missing --registry-referrers-mode=oci-1-1 (creates .sig tag artifacts)"
 fi
 
 # Test: cosign attest must exist and use OCI 1.1 referrers
-if ! grep -q 'cosign attest' "$WORKFLOW"; then
+if ! echo "$WORKFLOW_JOINED" | grep -q 'cosign attest'; then
   fail "cosign attest command not found in workflow"
-elif grep -A5 'cosign attest' "$WORKFLOW" | grep -qF 'registry-referrers-mode=oci-1-1'; then
+elif echo "$WORKFLOW_JOINED" | grep 'cosign attest' | grep -qF 'registry-referrers-mode=oci-1-1'; then
   pass "cosign attest uses --registry-referrers-mode=oci-1-1"
 else
   fail "cosign attest missing --registry-referrers-mode=oci-1-1 (creates .att tag artifacts)"
