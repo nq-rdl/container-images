@@ -1,30 +1,15 @@
 SHELL := /bin/bash
 
-# ── Install URLs / versions ──────────────────────────────────────────
-PIXI_INSTALL_URL   := https://pixi.sh/install.sh
-K3D_INSTALL_URL    := https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh
-GH_INSTALL_URL     := https://cli.github.com/packages
+.PHONY: install-deps
 
-# ── Container runtime detection ──────────────────────────────────────
-CONTAINER_RUNTIME := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
-
-# ── Targets ──────────────────────────────────────────────────────────
-
-.PHONY: install-deps install-pixi install-container-runtime install-gh install-k3d
-
-install-deps: install-pixi install-container-runtime install-gh install-k3d
-	@echo ""
-	@echo "All dependencies installed."
-
-install-pixi:
+install-deps:
+	@echo "── checking dependencies ──"
 	@if command -v pixi >/dev/null 2>&1; then \
 		echo "pixi: already installed ($$(pixi --version))"; \
 	else \
-		echo "pixi: not found — installing via pixi.sh ..."; \
-		curl -fsSL $(PIXI_INSTALL_URL) | bash; \
+		echo "pixi: not found — installing ..."; \
+		curl -fsSL https://pixi.sh/install.sh | bash; \
 	fi
-
-install-container-runtime:
 	@if command -v docker >/dev/null 2>&1; then \
 		echo "container runtime: docker ($$(docker --version))"; \
 	elif command -v podman >/dev/null 2>&1; then \
@@ -42,8 +27,6 @@ install-container-runtime:
 			exit 1; \
 		fi; \
 	fi
-
-install-gh:
 	@if command -v gh >/dev/null 2>&1; then \
 		echo "gh cli: already installed ($$(gh --version | head -1))"; \
 	else \
@@ -64,11 +47,10 @@ install-gh:
 			exit 1; \
 		fi; \
 	fi
-
-install-k3d:
 	@if command -v k3d >/dev/null 2>&1; then \
 		echo "k3d: already installed ($$(k3d version | head -1))"; \
 	else \
-		echo "k3d: not found — installing via k3d install script ..."; \
-		curl -fsSL $(K3D_INSTALL_URL) | bash; \
+		echo "k3d: not found — installing ..."; \
+		curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash; \
 	fi
+	@echo "── all dependencies installed ──"
