@@ -10,9 +10,11 @@ podman pull ghcr.io/nq-rdl/bun-ubi9:latest
 
 ## Supported tags
 
-- `1.1.42` — exact version
-- `1.1` — latest patch
-- `latest` — most recent build from `main`
+- `1.1.42` — specific Bun version, latest UBI9 patch
+- `1.1` — latest patch of Bun 1.1.x
+- `latest` — latest Bun version, latest UBI9 patch
+
+Pin by `@sha256:…` digest in production manifests.
 
 ## Details
 
