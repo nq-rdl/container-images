@@ -56,6 +56,13 @@ else
   fail "cosign attest missing --registry-referrers-mode=oci-1-1 (creates .att tag artifacts)"
 fi
 
+# Test: convenience alias step uses imagetools create with digest source
+if ! grep -q 'imagetools create' "$WORKFLOW"; then
+  fail "convenience alias step (docker buildx imagetools create) not found in workflow"
+else
+  pass "convenience alias step uses docker buildx imagetools create"
+fi
+
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "${FAILURES} test(s) failed"
