@@ -91,7 +91,7 @@ jobs:
             while IFS= read -r tag; do
               [ -z "${tag}" ] && continue
               [ "${tag}" = "latest" ] && continue
-              TAGS="$(printf '%s%s\n' "${TAGS}" "type=raw,value=${tag},enable={{is_default_branch}}")"
+              TAGS+="type=raw,value=${tag},enable={{is_default_branch}}"$'\n'
             done < <(yq -r '(.tags // [])[]' "${YAML}")
           fi
           {
