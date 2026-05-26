@@ -1,0 +1,114 @@
+# syntax=docker/dockerfile:1.7
+#
+# Apache Spark 3.5.6 on UBI9-minimal
+# Blueprint: apache/spark-docker 3.5.6/scala2.12-java17-ubuntu/Dockerfile
+# Changes: base image swap (eclipse-temurin → UBI9), apt-get → microdnf,
+#          tini via GitHub binary, removed gosu (non-root only)
+#
+
+ARG UBI_VERSION=9.5
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+
+ARG SPARK_VERSION=3.5.6
+ARG SPARK_GPG_KEY=0FE4571297AB84440673665669600C8338F65970
+ARG TINI_VERSION=v0.19.0
+ARG TARGETARCH
+ARG spark_uid=185
+
+LABEL org.opencontainers.image.title="spark-ubi9"
+LABEL org.opencontainers.image.description="Apache Spark ${SPARK_VERSION} runtime on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+RUN groupadd --system --gid=${spark_uid} spark && \
+    useradd --system --uid=${spark_uid} --gid=spark spark
+
+RUN microdnf install -y --nodocs \
+        java-17-openjdk-headless \
+        bash \
+        gnupg2 \
+        procps-ng \
+        net-tools \
+        nss_wrapper \
+        krb5-workstation \
+        pam \
+        shadow-utils \
+        gzip \
+        tar \
+        findutils \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+# Install tini (not available in UBI9 base repos — download binary like bun pattern)
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) TINI_ARCH=amd64 ;; \
+        arm64) TINI_ARCH=arm64 ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/bin/tini \
+        "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+    curl -fsSL -o /tmp/tini.asc \
+        "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}.asc"; \
+    export GNUPGHOME="$(mktemp -d)"; \
+    gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7 || \
+    gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7; \
+    gpg --batch --verify /tmp/tini.asc /usr/bin/tini; \
+    gpgconf --kill all; \
+    rm -rf "$GNUPGHOME" /tmp/tini.asc; \
+    chmod +x /usr/bin/tini
+
+RUN set -ex; \
+    mkdir -p /opt/spark; \
+    mkdir /opt/spark/python; \
+    mkdir -p /opt/spark/examples; \
+    mkdir -p /opt/spark/work-dir; \
+    chmod g+w /opt/spark/work-dir; \
+    touch /opt/spark/RELEASE; \
+    chown -R spark:spark /opt/spark; \
+    echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su
+
+# Install Apache Spark — GPG-verified download from Apache archive
+# hadolint ignore=DL3003
+RUN set -ex; \
+    export SPARK_TMP="$(mktemp -d)"; \
+    cd "$SPARK_TMP"; \
+    curl -fsSL -o spark.tgz \
+        "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz"; \
+    curl -fsSL -o spark.tgz.asc \
+        "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz.asc"; \
+    export GNUPGHOME="$(mktemp -d)"; \
+    gpg --batch --keyserver hkps://keys.openpgp.org --recv-key "$SPARK_GPG_KEY" || \
+    gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$SPARK_GPG_KEY"; \
+    gpg --batch --verify spark.tgz.asc spark.tgz; \
+    gpgconf --kill all; \
+    rm -rf "$GNUPGHOME" spark.tgz.asc; \
+    \
+    tar -xf spark.tgz --strip-components=1; \
+    chown -R spark:spark .; \
+    mv jars /opt/spark/; \
+    mv RELEASE /opt/spark/; \
+    mv bin /opt/spark/; \
+    mv sbin /opt/spark/; \
+    mv kubernetes/dockerfiles/spark/decom.sh /opt/; \
+    mv examples /opt/spark/; \
+    ln -s "$(basename /opt/spark/examples/jars/spark-examples_*.jar)" /opt/spark/examples/jars/spark-examples.jar; \
+    mv kubernetes/tests /opt/spark/; \
+    mv data /opt/spark/; \
+    mv python/pyspark /opt/spark/python/pyspark/; \
+    mv python/lib /opt/spark/python/lib/; \
+    chmod a+x /opt/decom.sh; \
+    cd ..; \
+    rm -rf "$SPARK_TMP"
+
+COPY entrypoint.sh /opt/
+
+ENV SPARK_HOME=/opt/spark
+ENV JAVA_HOME=/usr/lib/jvm/jre-17-openjdk
+
+WORKDIR /opt/spark/work-dir
+
+USER spark
+
+ENTRYPOINT [ "/opt/entrypoint.sh" ]

@@ -1,0 +1,22 @@
+name: pyspark-ubi9
+description: PySpark runtime with Python on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+  - linux/arm64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: pyspark
+  version: "3.5.6"
+tags:
+  - "3.5"
+  - "3.5.6"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-11-01"

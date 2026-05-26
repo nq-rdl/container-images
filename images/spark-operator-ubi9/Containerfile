@@ -1,0 +1,95 @@
+# syntax=docker/dockerfile:1.7
+#
+# Kubeflow Spark Operator on UBI9-minimal
+# Blueprint: kubeflow/spark-operator Dockerfile (master)
+# Changes: runtime stage swapped from spark:4.0.1 to UBI9-minimal,
+#          apt-get → microdnf, source downloaded as tarball
+#
+
+ARG SPARK_OPERATOR_VERSION=v2.1.0
+ARG GO_VERSION=1.24
+ARG TINI_VERSION=v0.19.0
+
+# --- Builder stage ---
+# hadolint ignore=DL3026
+FROM golang:${GO_VERSION} AS builder
+
+ARG SPARK_OPERATOR_VERSION
+ARG TARGETARCH
+
+RUN set -eux; \
+    curl -fsSL -o /tmp/spark-operator.tar.gz \
+        "https://github.com/kubeflow/spark-operator/archive/refs/tags/${SPARK_OPERATOR_VERSION}.tar.gz"; \
+    mkdir -p /workspace; \
+    tar xzf /tmp/spark-operator.tar.gz -C /workspace --strip-components=1; \
+    rm /tmp/spark-operator.tar.gz
+
+WORKDIR /workspace
+
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    go mod download
+
+ENV GOCACHE=/root/.cache/go-build
+
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on \
+    go build -ldflags="-s -w -extldflags '-static'" \
+    -o /usr/local/bin/spark-operator cmd/operator/main.go
+
+# --- Runtime stage ---
+ARG UBI_VERSION=9.5
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+
+ARG SPARK_OPERATOR_VERSION
+ARG TINI_VERSION
+ARG TARGETARCH
+ARG SPARK_UID=185
+ARG SPARK_GID=185
+
+LABEL org.opencontainers.image.title="spark-operator-ubi9"
+LABEL org.opencontainers.image.description="Kubeflow Spark Operator ${SPARK_OPERATOR_VERSION} on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+RUN microdnf install -y --nodocs \
+        bash \
+        gnupg2 \
+        nss_wrapper \
+        shadow-utils \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+# Install tini
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) TINI_ARCH=amd64 ;; \
+        arm64) TINI_ARCH=arm64 ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/bin/tini \
+        "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+    curl -fsSL -o /tmp/tini.asc \
+        "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}.asc"; \
+    export GNUPGHOME="$(mktemp -d)"; \
+    gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7 || \
+    gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7; \
+    gpg --batch --verify /tmp/tini.asc /usr/bin/tini; \
+    gpgconf --kill all; \
+    rm -rf "$GNUPGHOME" /tmp/tini.asc; \
+    chmod +x /usr/bin/tini
+
+RUN groupadd --system --gid=${SPARK_GID} spark 2>/dev/null || true && \
+    useradd --system --uid=${SPARK_UID} --gid=${SPARK_GID} -d /home/spark -s /sbin/nologin spark 2>/dev/null || true && \
+    mkdir -p /etc/k8s-webhook-server/serving-certs /home/spark && \
+    chmod -R g+rw /etc/k8s-webhook-server/serving-certs && \
+    chown -R spark /etc/k8s-webhook-server/serving-certs /home/spark
+
+USER ${SPARK_UID}:${SPARK_GID}
+
+COPY --from=builder /usr/local/bin/spark-operator /usr/bin/spark-operator
+
+COPY entrypoint.sh /usr/bin/
+
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]

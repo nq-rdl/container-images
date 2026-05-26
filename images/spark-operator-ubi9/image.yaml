@@ -1,0 +1,22 @@
+name: spark-operator-ubi9
+description: Kubeflow Spark Operator controller on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+  - linux/arm64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: spark-operator
+  version: "2.1.0"
+tags:
+  - "2.1"
+  - "2.1.0"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-06-01"
