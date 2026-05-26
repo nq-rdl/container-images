@@ -38,7 +38,8 @@ When a new UBI major version ships (e.g., UBI 10), a new image is created
 (`{service}-ubi10`). The previous image continues receiving patches until EOL.
 
 A convenience image without the UBI suffix (`{service}`) tracks the latest
-UBI major version and is suitable for local development only.
+UBI major version and is suitable for local development only (planned — see
+[#7](https://github.com/nq-rdl/container-images/issues/7)).
 
 ### Tags
 

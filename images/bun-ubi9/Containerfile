@@ -13,7 +13,6 @@ LABEL org.opencontainers.image.vendor="NQ RDL Platform"
 LABEL org.opencontainers.image.licenses="MIT"
 
 RUN microdnf install -y --nodocs \
-        curl \
         unzip \
         ca-certificates \
         glibc-langpack-en \

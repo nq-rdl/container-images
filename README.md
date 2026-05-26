@@ -33,11 +33,5 @@ cosign verify-attestation \
 
 ## Tag conventions
 
-| Tag | Meaning |
-|-----|---------|
-| `1.1.42` | Exact runtime version, immutable |
-| `1.1` | Latest patch of minor |
-| `latest` | Most recent stable build from `main` |
-| `YYYYMMDD` | Nightly rebuild (CVE refresh) |
-
-Pin by `@sha256:…` digest in production manifests.
+See [CONTRIBUTING.md](CONTRIBUTING.md#image-naming-convention) for the full
+naming standard. Pin by `@sha256:…` digest in production manifests.
