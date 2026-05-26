@@ -13,6 +13,7 @@ LABEL org.opencontainers.image.vendor="NQ RDL Platform"
 LABEL org.opencontainers.image.licenses="MIT"
 
 RUN microdnf install -y --nodocs \
+        curl \
         unzip \
         ca-certificates \
         glibc-langpack-en \
@@ -28,14 +29,14 @@ RUN set -eux; \
         arm64) BUN_ARCH=aarch64 ;; \
         *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/bun.zip \
+    curl -fsSL -o "/tmp/bun-linux-${BUN_ARCH}.zip" \
         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip"; \
     curl -fsSL -o /tmp/SHASUMS256.txt \
         "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/SHASUMS256.txt"; \
     cd /tmp && grep "bun-linux-${BUN_ARCH}.zip" SHASUMS256.txt | sha256sum -c -; \
-    unzip /tmp/bun.zip -d /tmp; \
+    unzip "/tmp/bun-linux-${BUN_ARCH}.zip" -d /tmp; \
     install -m 0755 "/tmp/bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun; \
-    rm -rf /tmp/bun.zip /tmp/SHASUMS256.txt "/tmp/bun-linux-${BUN_ARCH}"; \
+    rm -rf "/tmp/bun-linux-${BUN_ARCH}.zip" /tmp/SHASUMS256.txt "/tmp/bun-linux-${BUN_ARCH}"; \
     /usr/local/bin/bun --version
 
 RUN useradd -u 1001 -g 0 -m -d /home/app -s /sbin/nologin app

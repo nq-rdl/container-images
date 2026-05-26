@@ -5,7 +5,6 @@
 ## Checklist
 
 - [ ] Containerfile uses a UBI base image
-- [ ] Non-root `USER` directive present
 - [ ] All required OCI labels present
 - [ ] `image.yaml` metadata is accurate
 - [ ] `pixi run lint-all` passes locally

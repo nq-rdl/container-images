@@ -18,7 +18,7 @@ labels: ["new-image"]
 
 ## Use case
 
-<!-- Why is this image needed? Which teams/services will consume it? -->
+<!-- What is the primary purpose of this image? Why is it needed? -->
 
 ## Platforms
 

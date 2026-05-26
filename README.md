@@ -4,11 +4,7 @@ UBI9-based container images for NQ RDL workloads. Built, scanned, signed, and SB
 
 ## Available images
 
-| Image | Base | Runtime | Status |
-|-------|------|---------|--------|
-| `ghcr.io/nq-rdl/bun-ubi9` | ubi9-minimal 9.5 | Bun 1.1.x | stable |
-| `ghcr.io/nq-rdl/node-ubi9` | ubi9-minimal | — | planned |
-| `ghcr.io/nq-rdl/python-ubi9` | ubi9-minimal | — | planned |
+See the [`images/`](images/) directory for all available images and their documentation.
 
 ## Pull
 

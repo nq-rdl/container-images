@@ -1,6 +1,6 @@
 [project]
 name = "container-images"
-version = "0.1.0"
+version = "0.0.1"
 description = "RDL container image catalog — build tooling"
 channels = ["conda-forge"]
 platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
