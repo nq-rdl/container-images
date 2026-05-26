@@ -47,6 +47,16 @@ install-deps:
 			exit 1; \
 		fi; \
 	fi
+	@if command -v kubectl >/dev/null 2>&1; then \
+		echo "kubectl: already installed ($$(kubectl version --client --short 2>/dev/null || kubectl version --client))"; \
+	else \
+		echo "kubectl: not found — installing ..."; \
+		ARCH=$$(uname -m); \
+		case "$$ARCH" in x86_64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; esac; \
+		curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/$$(uname -s | tr '[:upper:]' '[:lower:]')/$$ARCH/kubectl" \
+		&& chmod +x /tmp/kubectl \
+		&& sudo mv /tmp/kubectl /usr/local/bin/kubectl; \
+	fi
 	@if command -v k3d >/dev/null 2>&1; then \
 		echo "k3d: already installed ($$(k3d version | head -1))"; \
 	else \
