@@ -2,7 +2,7 @@ name: OPA Policy Check
 
 on:
   pull_request:
-    paths: ['images/**']
+    paths: ['images/**', 'policy/**', 'tests/**', '.github/workflows/build.yml', '.github/workflows/policy.yml']
 
 jobs:
   conftest:
@@ -16,7 +16,20 @@ jobs:
           curl -fsSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
             | tar xz -C /usr/local/bin conftest
 
-      - name: Run policy checks
+      - name: Run Containerfile policy checks
         run: |
-          find images -name Containerfile -exec \
-            conftest test --policy policy/ --parser dockerfile {} +
+          find images -name Containerfile -print0 \
+            | xargs -0 conftest test --policy policy/ --parser dockerfile
+
+      - name: Run image.yaml tag policy checks
+        run: |
+          find images -name image.yaml -print0 \
+            | xargs -0 conftest test --policy policy/image-meta/ --namespace image_meta
+
+  workflow-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate build workflow tag compliance
+        run: bash tests/test-build-workflow-tags.sh

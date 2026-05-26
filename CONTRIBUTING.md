@@ -76,10 +76,13 @@ security rebuild updates the image behind the same tag.
 ## Local checks
 
 ```bash
-pixi run lint-all            # hadolint + shellcheck + actionlint + conftest
-pixi run policy-check        # OPA/Conftest policies only
-pixi run lint-containerfiles # hadolint only
-pixi run pre-commit-run      # all pre-commit hooks
+pixi run lint-all                  # hadolint + shellcheck + actionlint + all policies
+pixi run policy-check              # all OPA/Conftest policies + workflow tag checks
+pixi run policy-check-containerfiles # Containerfile policies only
+pixi run policy-check-image-meta   # image.yaml tag convention checks
+pixi run policy-check-workflow-tags # build workflow tag compliance
+pixi run lint-containerfiles       # hadolint only
+pixi run pre-commit-run            # all pre-commit hooks
 ```
 
 ## Changelog

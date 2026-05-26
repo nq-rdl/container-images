@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add OPA policy and shell tests to enforce CONTRIBUTING.md tag conventions on image.yaml and build workflow'
+time: 2026-05-26T18:00:01.000000+10:00
