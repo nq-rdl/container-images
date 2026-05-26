@@ -6,12 +6,12 @@ site_name = "RDL Container Images Documentation"
 # meaningful description of the site content for use by search engines.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_description
-site_description = "A new project generated from the default template project."
+site_description = "Build tooling and OPA policies for RDL container images — UBI-based, multi-arch, OCI-compliant."
 
 # The site_author attribute. This is used in the HTML head element.
 #
 # Read more: https://zensical.org/docs/setup/basics/#site_author
-site_author = "<your name here>"
+site_author = "Research Data Laboratory Collaborators"
 
 # The site_url is the canonical URL for your site. When building online
 # documentation you should set this.

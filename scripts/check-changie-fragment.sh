@@ -3,10 +3,23 @@ set -euo pipefail
 
 MODE="${1:-hint}"
 
-base=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+if [ "${SKIP_CHANGELOG:-0}" = "1" ]; then
+  echo "SKIP_CHANGELOG=1 — changie fragment check skipped"
+  exit 0
+fi
+
+default_branch="main"
+remote_ref="origin/${default_branch}"
+
+base=$(git merge-base HEAD "$remote_ref" 2>/dev/null || echo "")
 
 if [ -z "$base" ]; then
-  echo "cannot resolve merge-base with origin/main; skipping changie check"
+  if [ "$MODE" = "enforce" ]; then
+    echo "error: cannot resolve merge-base with ${remote_ref}; refusing to skip enforcement."
+    echo "  ensure 'origin' is fetched (git fetch origin ${default_branch})."
+    exit 1
+  fi
+  echo "warning: cannot resolve merge-base with ${remote_ref}; skipping changie check"
   exit 0
 fi
 
@@ -17,11 +30,11 @@ fi
 if [ "$MODE" = "enforce" ]; then
   echo "error: no changie fragment added on this branch."
   echo "  run: changie new"
-  echo "  or add the 'skip-changelog' label to the PR if no changelog entry is needed."
+  echo "  to bypass: SKIP_CHANGELOG=1 git push"
   exit 1
 else
   echo ""
   echo "hint: no changie fragment added on this branch yet."
-  echo "hint: run 'changie new' before pushing, or add 'skip-changelog' label to the PR."
+  echo "hint: run 'changie new' before pushing."
   exit 0
 fi

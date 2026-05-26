@@ -84,7 +84,9 @@ pixi run pre-commit-run      # all pre-commit hooks
 
 ## Changelog
 
-Every PR must include a changie fragment describing the change. Run:
+Every PR must include a changie fragment describing the change.
+[Install changie](https://changie.dev/guide/installation/) (`brew install changie`
+or `go install github.com/miniscruff/changie@latest`), then run:
 
 ```bash
 changie new
@@ -92,7 +94,7 @@ changie new
 
 A soft reminder appears on `git commit` if no fragment exists. On `git push`, the
 check is enforced — pushes are blocked until a fragment is added. If a PR genuinely
-needs no changelog entry, add the `skip-changelog` label.
+needs no changelog entry, bypass with `SKIP_CHANGELOG=1 git push`.
 
 ## Pre-commit hooks
 
