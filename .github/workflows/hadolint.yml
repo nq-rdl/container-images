@@ -1,0 +1,20 @@
+name: Hadolint
+
+on:
+  pull_request:
+    paths: ['images/**/Containerfile']
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Hadolint
+        run: |
+          curl -fsSL -o /usr/local/bin/hadolint \
+            "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64"
+          chmod +x /usr/local/bin/hadolint
+
+      - name: Run Hadolint
+        run: find images -name Containerfile -exec hadolint --config .hadolint.yaml {} +

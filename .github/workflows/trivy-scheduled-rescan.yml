@@ -1,0 +1,57 @@
+name: Trivy Scheduled Rescan
+
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.set-matrix.outputs.images }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: set-matrix
+        run: |
+          set -euo pipefail
+          IMAGES=$(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -printf '%f\n' \
+                   | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+
+  rescan:
+    needs: discover
+    if: needs.discover.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.discover.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+          format: sarif
+          output: trivy-rescan-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-rescan-${{ matrix.image }}.sarif
+          category: trivy-rescan-${{ matrix.image }}
