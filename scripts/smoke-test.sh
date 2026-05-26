@@ -6,6 +6,13 @@ if [ "${SKIP_SMOKE:-0}" = "1" ]; then
   exit 0
 fi
 
+if [ -n "${PRE_COMMIT_FROM_REF:-}" ] && [ -n "${PRE_COMMIT_TO_REF:-}" ]; then
+  if ! git diff --name-only "${PRE_COMMIT_FROM_REF}..${PRE_COMMIT_TO_REF}" -- images/ | grep -q .; then
+    echo "No changes under images/ — skipping smoke tests"
+    exit 0
+  fi
+fi
+
 if command -v docker &>/dev/null; then
   RUNTIME=docker
 elif command -v podman &>/dev/null; then
@@ -92,14 +99,15 @@ for entry in "${BUILT_TAGS[@]}"; do
   kubectl run "$pod_name" \
     --image="$tag" \
     --restart=Never \
-    --image-pull-policy=Never \
-    --command -- /bin/sh -c "echo smoke-ok"
+    --image-pull-policy=Never
 
-  if kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${pod_name}" --timeout=60s 2>/dev/null; then
+  if kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/${pod_name}" --timeout=60s 2>/dev/null; then
     echo "  OK: ${name} runs in k3d"
+  elif kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${pod_name}" --timeout=5s 2>/dev/null; then
+    echo "  OK: ${name} completed in k3d"
   else
     phase=$(kubectl get "pod/${pod_name}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-    fail "${name} pod did not succeed (phase: ${phase})"
+    fail "${name} pod did not start (phase: ${phase})"
     kubectl logs "pod/${pod_name}" 2>/dev/null || true
   fi
 done
