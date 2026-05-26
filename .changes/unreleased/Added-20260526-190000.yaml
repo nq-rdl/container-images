@@ -1,0 +1,3 @@
+kind: Added
+body: 'Smoke test pre-push hook (container build + k3d cluster verification) and updated CONTRIBUTING.md with full dependency list'
+time: 2026-05-26T19:00:00.000000+10:00
