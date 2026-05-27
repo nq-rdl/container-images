@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1.7
+#
+# Python on UBI9-micro
+#
+# Two-stage bootstrap: packages are installed via microdnf on ubi-minimal
+# into a copy of the ubi-micro rootfs, then the assembled tree becomes
+# the final image.
+
+ARG UBI_VERSION=9.5
+ARG PYTHON_VERSION=3.13
+
+# ---------- stage 0: ubi-micro reference ----------
+FROM registry.access.redhat.com/ubi9/ubi-micro:${UBI_VERSION} AS micro
+
+# ---------- stage 1: install Python into the micro rootfs ----------
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION} AS builder
+
+ARG PYTHON_VERSION
+
+COPY --from=micro / /mnt/rootfs
+
+RUN microdnf install -y --installroot /mnt/rootfs --releasever 9 \
+        --setopt=install_weak_deps=0 --nodocs \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-pip \
+        python${PYTHON_VERSION}-setuptools \
+        ca-certificates \
+        glibc-langpack-en \
+    && microdnf clean all --installroot /mnt/rootfs \
+    && rm -rf /mnt/rootfs/var/cache/yum /mnt/rootfs/var/cache/dnf \
+              /mnt/rootfs/var/log/*
+
+RUN ln -sf python${PYTHON_VERSION} /mnt/rootfs/usr/bin/python3 \
+    && ln -sf python3 /mnt/rootfs/usr/bin/python \
+    && ln -sf pip${PYTHON_VERSION} /mnt/rootfs/usr/bin/pip3 \
+    && ln -sf pip3 /mnt/rootfs/usr/bin/pip
+
+RUN echo "app:x:1001:0:app:/home/app:/sbin/nologin" >> /mnt/rootfs/etc/passwd \
+    && mkdir -p /mnt/rootfs/home/app \
+    && chown 1001:0 /mnt/rootfs/home/app \
+    && chmod 775 /mnt/rootfs/home/app
+
+# ---------- stage 2: final runtime ----------
+FROM scratch
+
+ARG PYTHON_VERSION=3.13
+
+LABEL org.opencontainers.image.title="python-ubi9"
+LABEL org.opencontainers.image.description="Python ${PYTHON_VERSION} on UBI9 micro"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="MIT"
+
+COPY --from=builder /mnt/rootfs /
+
+ENV LANG=en_US.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+USER 1001
+WORKDIR /home/app
+
+ENTRYPOINT ["python3"]
+CMD ["--help"]
