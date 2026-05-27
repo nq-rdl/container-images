@@ -16,7 +16,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 RUN microdnf install -y --nodocs \
         python${PYTHON_VERSION} \
         python${PYTHON_VERSION}-pip \
-        python${PYTHON_VERSION}-setuptools \
+        shadow-utils \
         ca-certificates \
         glibc-langpack-en \
     && microdnf clean all \
