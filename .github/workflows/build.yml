@@ -189,8 +189,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.build_args }}
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}
           cache-to: type=gha,scope=${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }},mode=max
 

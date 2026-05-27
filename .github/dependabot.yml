@@ -38,3 +38,31 @@ updates:
       interval: weekly
     commit-message:
       prefix: "image(spark-operator-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/zulu17-jdk-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(zulu17-jdk-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/zulu17-jre-headless-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(zulu17-jre-headless-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/zulu21-jdk-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(zulu21-jdk-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/zulu21-jre-headless-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(zulu21-jre-headless-ubi9)"

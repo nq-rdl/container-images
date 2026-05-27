@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+#
+# Azul Zulu JDK 17 on UBI9-minimal
+# Blueprint: zulu-openjdk/zulu-openjdk centos/17-latest/Dockerfile
+# Changes: base image swap (CentOS 7 -> UBI9-minimal), yum -> microdnf,
+#          versionlock -> explicit package version, non-root user added
+#
+
+ARG UBI_VERSION=9.5
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+
+ARG ZULU_REPO_VER=1.0.0-1
+ARG ZULU_REPO_SHA256=2724b8be277ec16196b8e9357ed5e506eb791f88f966965a4f4a8bd5c4acdcfe
+ARG ZULU_VERSION=17.0.19
+
+LABEL org.opencontainers.image.title="zulu17-jdk-ubi9"
+LABEL org.opencontainers.image.description="Azul Zulu JDK ${ZULU_VERSION} on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="GPL-2.0-only WITH Classpath-exception-2.0"
+
+ENV LANG='en_US.UTF-8'
+
+RUN set -eux; \
+    rpm --import https://repos.azulsystems.com/RPM-GPG-KEY-azulsystems; \
+    curl -fsSL -o /tmp/zulu-repo.rpm \
+        "https://cdn.azul.com/zulu/bin/zulu-repo-${ZULU_REPO_VER}.noarch.rpm"; \
+    echo "${ZULU_REPO_SHA256}  /tmp/zulu-repo.rpm" | sha256sum --strict --check -; \
+    rpm -ivh /tmp/zulu-repo.rpm; \
+    rm -f /tmp/zulu-repo.rpm
+
+RUN microdnf install -y --nodocs \
+        "zulu17-jdk-${ZULU_VERSION}" \
+        shadow-utils \
+        tzdata \
+        fontconfig \
+        glibc-langpack-en \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+ENV JAVA_HOME=/usr/lib/jvm/zulu17
+
+RUN useradd -u 1001 -g 0 -m -d /home/java -s /sbin/nologin java
+USER 1001
+WORKDIR /home/java
+
+ENTRYPOINT ["java"]
+CMD ["--version"]
