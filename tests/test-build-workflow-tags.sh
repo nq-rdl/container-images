@@ -35,18 +35,20 @@ else
   pass "no type=schedule tags found"
 fi
 
-# Test: provenance must be disabled (build-push-action fallback creates sha256-* tags)
-if grep -qE 'provenance:\s*true' "$WORKFLOW"; then
-  fail "build-push-action has provenance: true (creates sha256-* digest tags via referrers fallback)"
+# Test: provenance must be explicitly disabled (build-push-action fallback creates sha256-* tags)
+# Asserting "false" is present (not just "true" absent) catches accidental line removal —
+# build-push-action defaults to provenance=mode=max on multi-platform builds.
+if grep -qE 'provenance:\s*false' "$WORKFLOW"; then
+  pass "provenance is explicitly disabled on build-push-action"
 else
-  pass "provenance is not enabled on build-push-action"
+  fail "build-push-action missing provenance: false (default enables sha256-* digest tags via referrers fallback)"
 fi
 
-# Test: sbom must be disabled (build-push-action fallback creates sha256-* tags)
-if grep -qE 'sbom:\s*true' "$WORKFLOW"; then
-  fail "build-push-action has sbom: true (creates sha256-* digest tags via referrers fallback)"
+# Test: sbom must be explicitly disabled (build-push-action fallback creates sha256-* tags)
+if grep -qE 'sbom:\s*false' "$WORKFLOW"; then
+  pass "sbom is explicitly disabled on build-push-action"
 else
-  pass "sbom is not enabled on build-push-action"
+  fail "build-push-action missing sbom: false (default enables sha256-* digest tags via referrers fallback)"
 fi
 
 # Join backslash-continued lines so multiline cosign commands are matched as one
