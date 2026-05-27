@@ -60,7 +60,7 @@ repos:
         stages: [pre-push]
 
       - id: smoke-test
-        name: smoke test (container build + k3d)
+        name: smoke test (build + container run + k3d)
         entry: scripts/smoke-test.sh
         language: system
         always_run: true

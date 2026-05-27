@@ -55,35 +55,56 @@ fail() {
   FAILURES=$((FAILURES + 1))
 }
 
+read_smoke_args() {
+  local cmd_file="$1/smoke-cmd"
+  if [ -f "$cmd_file" ]; then
+    head -1 "$cmd_file"
+  fi
+}
+
 echo "==> Phase 1: Building images with ${RUNTIME}"
-declare -a BUILT_TAGS=()
+declare -a BUILT=()
 for cf in "${CONTAINERFILES[@]}"; do
   dir=$(dirname "$cf")
   name=$(basename "$dir")
   tag="localhost/smoke-test/${name}:latest"
   echo "  Building ${name}..."
   if "$RUNTIME" build -t "$tag" -f "$cf" "$dir"; then
-    BUILT_TAGS+=("${tag}|${name}")
+    BUILT+=("${tag}|${name}|${dir}")
     echo "  OK: ${name} built"
   else
     fail "${name} build failed"
   fi
 done
 
-if [ ${#BUILT_TAGS[@]} -eq 0 ]; then
-  echo "No images built — skipping k3d tests"
+if [ ${#BUILT[@]} -eq 0 ]; then
+  echo "No images built — skipping remaining tests"
   [ "$FAILURES" -gt 0 ] && exit 1
   exit 0
 fi
 
-echo "==> Phase 2: k3d cluster smoke test"
+echo "==> Phase 2: Container runtime smoke test (${RUNTIME})"
+for entry in "${BUILT[@]}"; do
+  IFS='|' read -r tag name dir <<< "$entry"
+  smoke_args=$(read_smoke_args "$dir")
+
+  echo "  Running ${name}..."
+  # shellcheck disable=SC2086
+  if "$RUNTIME" run --rm "$tag" $smoke_args; then
+    echo "  OK: ${name} runs (${RUNTIME})"
+  else
+    fail "${name} failed to run (${RUNTIME})"
+  fi
+done
+
+echo "==> Phase 3: k3d cluster smoke test"
 echo "  Creating cluster ${CLUSTER_NAME}..."
 k3d cluster create "$CLUSTER_NAME" --wait --timeout 120s --no-lb
 
-for entry in "${BUILT_TAGS[@]}"; do
-  tag="${entry%%|*}"
-  name="${entry##*|}"
+for entry in "${BUILT[@]}"; do
+  IFS='|' read -r tag name dir <<< "$entry"
   pod_name="smoke-${name}"
+  smoke_args=$(read_smoke_args "$dir")
 
   echo "  Importing ${name} into k3d..."
   if [ "$RUNTIME" = "podman" ]; then
@@ -96,15 +117,24 @@ for entry in "${BUILT_TAGS[@]}"; do
   fi
 
   echo "  Running pod ${pod_name}..."
-  kubectl run "$pod_name" \
-    --image="$tag" \
-    --restart=Never \
-    --image-pull-policy=Never
+  if [ -n "$smoke_args" ]; then
+    # shellcheck disable=SC2086
+    kubectl run "$pod_name" \
+      --image="$tag" \
+      --restart=Never \
+      --image-pull-policy=Never \
+      -- $smoke_args
+  else
+    kubectl run "$pod_name" \
+      --image="$tag" \
+      --restart=Never \
+      --image-pull-policy=Never
+  fi
 
-  if kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/${pod_name}" --timeout=60s 2>/dev/null; then
-    echo "  OK: ${name} runs in k3d"
-  elif kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${pod_name}" --timeout=5s 2>/dev/null; then
+  if kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${pod_name}" --timeout=30s 2>/dev/null; then
     echo "  OK: ${name} completed in k3d"
+  elif kubectl wait --for=jsonpath='{.status.phase}'=Running "pod/${pod_name}" --timeout=30s 2>/dev/null; then
+    echo "  OK: ${name} runs in k3d"
   else
     phase=$(kubectl get "pod/${pod_name}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
     fail "${name} pod did not start (phase: ${phase})"

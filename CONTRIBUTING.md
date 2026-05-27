@@ -27,6 +27,9 @@ pixi run pre-commit install --hook-type pre-commit --hook-type pre-push
    - `Containerfile` — must use a UBI base image
    - `image.yaml` — metadata (owners, platforms, tags, support status)
    - `README.md` — image-specific docs
+   - `smoke-cmd` — (optional) single line of args passed to the container
+     during smoke tests (e.g., `--version`). Without this file the default
+     `ENTRYPOINT`/`CMD` is used.
 2. Add a `docker` entry in `.github/dependabot.yml`
 3. Run `pixi run lint-all` to validate
 4. Open a PR
@@ -115,8 +118,15 @@ that:
 
 1. **Builds every image** under `images/` with your container runtime
    (docker or podman)
-2. **Creates a temporary k3d cluster**, imports the built images, and verifies
+2. **Runs each image** with `docker`/`podman run` to verify it starts
+   correctly outside Kubernetes
+3. **Creates a temporary k3d cluster**, imports the built images, and verifies
    each one starts as a pod
+
+If an image directory contains a `smoke-cmd` file, its first line is passed
+as arguments to the container in phases 2 and 3 (e.g., `--version` or
+`spark-submit --version`). Without this file the default `ENTRYPOINT`/`CMD`
+is used.
 
 To run manually:
 
@@ -150,4 +160,4 @@ end-of-file fixer.
 | conftest | commit |
 | changie fragment reminder | commit |
 | changie fragment required | push |
-| smoke test (build + k3d) | push |
+| smoke test (build + container run + k3d) | push |
