@@ -1,0 +1,29 @@
+name: python-ubi9
+description: Python runtime on UBI9 micro
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-micro
+  version: "9.5"
+runtime:
+  name: python
+build_matrix:
+  arg: PYTHON_VERSION
+  versions:
+    - version: "3.11"
+      tags: ["3.11"]
+    - version: "3.12"
+      tags: ["3.12"]
+    - version: "3.13"
+      tags: ["3.13", "latest"]
+    - version: "3.14"
+      tags: ["3.14"]
+    - version: "3.15"
+      tags: ["3.15"]
+support:
+  status: stable
+  eol: "2029-10-31"
