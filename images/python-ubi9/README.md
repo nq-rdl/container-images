@@ -6,7 +6,7 @@ version via a shared Containerfile and `PYTHON_VERSION` build arg.
 ## Pull
 
 ```bash
-podman pull ghcr.io/nq-rdl/python-ubi9:3.13
+podman pull ghcr.io/nq-rdl/python-ubi9:3.12
 ```
 
 ## Supported tags
@@ -15,10 +15,7 @@ podman pull ghcr.io/nq-rdl/python-ubi9:3.13
 |-----|---------|
 | `3.11` | Python 3.11.x on UBI9-minimal |
 | `3.12` | Python 3.12.x on UBI9-minimal |
-| `3.13` | Python 3.13.x on UBI9-minimal |
-| `3.14` | Python 3.14.x on UBI9-minimal |
-| `3.15` | Python 3.15.x on UBI9-minimal |
-| `latest` | Alias for `3.13` |
+| `latest` | Alias for `3.12` |
 
 Pin by `@sha256:...` digest in production manifests.
 
@@ -35,7 +32,7 @@ Pin by `@sha256:...` digest in production manifests.
 ## Usage as base image
 
 ```dockerfile
-FROM ghcr.io/nq-rdl/python-ubi9:3.13
+FROM ghcr.io/nq-rdl/python-ubi9:3.12
 
 USER 0
 COPY requirements.txt .
@@ -49,6 +46,6 @@ CMD ["python", "app.py"]
 ## Verify
 
 ```bash
-gh attestation verify oci://ghcr.io/nq-rdl/python-ubi9:3.13 \
+gh attestation verify oci://ghcr.io/nq-rdl/python-ubi9:3.12 \
   --repo nq-rdl/container-images
 ```
