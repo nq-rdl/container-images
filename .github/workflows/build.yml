@@ -154,16 +154,13 @@ jobs:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
 
-      - uses: sigstore/cosign-installer@v3
+      - name: Attest build provenance
         if: github.event_name != 'pull_request'
-
-      - name: Sign image (keyless)
-        if: github.event_name != 'pull_request'
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          DIGEST: ${{ steps.build-push.outputs.digest }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-        run: cosign sign --yes --registry-referrers-mode=oci-1-1 "${IMAGE}@${DIGEST}"
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          push-to-registry: true
 
       - name: Generate SBOM
         if: github.event_name != 'pull_request'
@@ -175,16 +172,12 @@ jobs:
 
       - name: Attest SBOM
         if: github.event_name != 'pull_request'
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          DIGEST: ${{ steps.build-push.outputs.digest }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-        run: |
-          cosign attest --yes \
-            --registry-referrers-mode=oci-1-1 \
-            --predicate sbom-${{ matrix.image }}.spdx.json \
-            --type spdxjson \
-            "${IMAGE}@${DIGEST}"
+        uses: actions/attest-sbom@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          sbom-path: sbom-${{ matrix.image }}.spdx.json
+          push-to-registry: true
 
   publish-aliases:
     if: github.event_name != 'pull_request'
@@ -201,8 +194,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: sigstore/cosign-installer@v3
-
       - name: Install yq
         run: |
           YQ_VERSION=4.44.6
@@ -210,9 +201,8 @@ jobs:
             "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
           chmod +x /usr/local/bin/yq
 
-      - name: Publish and sign convenience aliases
+      - name: Publish convenience aliases
         env:
-          COSIGN_EXPERIMENTAL: "1"
           OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
@@ -249,11 +239,6 @@ jobs:
 
             echo "Publishing alias: ${alias_image} -> ${source_ref}"
             docker buildx imagetools create "${TAGS[@]}" "${source_ref}"
-
-            alias_digest=$(docker buildx imagetools inspect "${alias_image}:latest" --format '{{json .Manifest}}' | jq -r '.digest')
-            if [ -n "$alias_digest" ] && [ "$alias_digest" != "null" ]; then
-              cosign sign --yes --registry-referrers-mode=oci-1-1 "${alias_image}@${alias_digest}"
-            fi
 
             unset TAGS
           done

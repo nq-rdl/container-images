@@ -51,25 +51,45 @@ else
   fail "build-push-action missing sbom: false (default enables sha256-* digest tags via referrers fallback)"
 fi
 
-# Join backslash-continued lines so multiline cosign commands are matched as one
-WORKFLOW_JOINED=$(sed ':a; /\\$/ { N; s/\\\n[[:space:]]*/ /; ta }' "$WORKFLOW")
-
-# Test: cosign sign must exist and use OCI 1.1 referrers
-if ! echo "$WORKFLOW_JOINED" | grep -q 'cosign sign'; then
-  fail "cosign sign command not found in workflow"
-elif echo "$WORKFLOW_JOINED" | grep 'cosign sign' | grep -qF 'registry-referrers-mode=oci-1-1'; then
-  pass "cosign sign uses --registry-referrers-mode=oci-1-1"
+# Test: GitHub-native attestation must be used (not cosign, which creates sha256-* ghost tags)
+if grep -q 'actions/attest-build-provenance' "$WORKFLOW"; then
+  pass "uses GitHub-native build provenance attestation"
 else
-  fail "cosign sign missing --registry-referrers-mode=oci-1-1 (creates .sig tag artifacts)"
+  fail "missing actions/attest-build-provenance (GitHub-native attestation avoids sha256-* ghost tags)"
 fi
 
-# Test: cosign attest must exist and use OCI 1.1 referrers
-if ! echo "$WORKFLOW_JOINED" | grep -q 'cosign attest'; then
-  fail "cosign attest command not found in workflow"
-elif echo "$WORKFLOW_JOINED" | grep 'cosign attest' | grep -qF 'registry-referrers-mode=oci-1-1'; then
-  pass "cosign attest uses --registry-referrers-mode=oci-1-1"
+if grep -q 'actions/attest-sbom' "$WORKFLOW"; then
+  pass "uses GitHub-native SBOM attestation"
 else
-  fail "cosign attest missing --registry-referrers-mode=oci-1-1 (creates .att tag artifacts)"
+  fail "missing actions/attest-sbom (GitHub-native attestation avoids sha256-* ghost tags)"
+fi
+
+# Test: both attest steps must push attestations to the registry (OCI 1.1 referrers)
+PUSH_COUNT=$(grep -cE 'push-to-registry:[[:space:]]*true' "$WORKFLOW" || true)
+if [ "$PUSH_COUNT" -ge 2 ]; then
+  pass "both attest steps push attestations to registry (OCI referrers)"
+else
+  fail "expected >= 2 push-to-registry: true entries, found ${PUSH_COUNT} (both attest-build-provenance and attest-sbom need it)"
+fi
+
+# Test: workflow permissions must include attestations: write and id-token: write
+if grep -q 'attestations:[[:space:]]*write' "$WORKFLOW"; then
+  pass "attestations: write permission present"
+else
+  fail "missing attestations: write permission (actions/attest-* will fail at runtime)"
+fi
+
+if grep -q 'id-token:[[:space:]]*write' "$WORKFLOW"; then
+  pass "id-token: write permission present"
+else
+  fail "missing id-token: write permission (actions/attest-* require OIDC token)"
+fi
+
+# Test: cosign sign/attest must NOT be used (creates sha256-* ghost tags on GHCR)
+if grep -qE 'cosign sign|cosign attest' "$WORKFLOW"; then
+  fail "workflow still uses cosign sign/attest (creates sha256-* ghost tags on GHCR)"
+else
+  pass "no cosign sign/attest commands (ghost-tag-free)"
 fi
 
 # Test: convenience alias step uses imagetools create with digest source
