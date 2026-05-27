@@ -143,9 +143,12 @@ SKIP_SMOKE=1 git push
 
 ## Trivy vulnerability scan
 
-A Trivy scan runs on `git push` (via pre-push hook) after the smoke tests.
+A Trivy scan runs on `git push` (via pre-push hook) after the smoke test.
 It checks every image under `images/` for fixable **CRITICAL** and **HIGH**
-severity vulnerabilities, matching the CI configuration in `build.yml`.
+severity vulnerabilities — the same severity filter and `ignore-unfixed`
+setting used by CI in `build.yml`. Unlike CI (which uploads SARIF results
+without blocking), the local hook **blocks the push** when fixable
+vulnerabilities are found so they can be addressed before review.
 
 Images are reused from the smoke-test build cache when available; otherwise
 Trivy builds them first.
@@ -182,5 +185,5 @@ end-of-file fixer.
 | conftest | commit |
 | changie fragment reminder | commit |
 | changie fragment required | push |
-| trivy vulnerability scan | push |
 | smoke test (build + container run + k3d) | push |
+| trivy vulnerability scan | push |
