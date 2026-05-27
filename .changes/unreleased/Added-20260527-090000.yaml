@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add docker/podman run phase to pre-push smoke tests with per-image smoke-cmd support (#22)'
+time: 2026-05-27T09:00:00.000000+00:00

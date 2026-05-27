@@ -27,6 +27,9 @@ pixi run pre-commit install --hook-type pre-commit --hook-type pre-push
    - `Containerfile` — must use a UBI base image
    - `image.yaml` — metadata (owners, platforms, tags, support status)
    - `README.md` — image-specific docs
+   - `smoke-cmd` — (optional) single line of args passed to the container
+     during smoke tests (e.g., `--version`). Without this file the default
+     `ENTRYPOINT`/`CMD` is used.
 2. Add a `docker` entry in `.github/dependabot.yml`
 3. Run `pixi run lint-all` to validate
 4. Open a PR
@@ -91,6 +94,7 @@ pixi run policy-check-image-meta   # image.yaml tag convention checks
 pixi run policy-check-workflow-tags # build workflow tag compliance
 pixi run lint-containerfiles       # hadolint only
 pixi run pre-commit-run            # all pre-commit hooks
+pixi run trivy-scan                # Trivy vulnerability scan (CRITICAL/HIGH)
 pixi run smoke-test                # build all images + k3d cluster test
 ```
 
@@ -115,8 +119,15 @@ that:
 
 1. **Builds every image** under `images/` with your container runtime
    (docker or podman)
-2. **Creates a temporary k3d cluster**, imports the built images, and verifies
+2. **Runs each image** with `docker`/`podman run` to verify it starts
+   correctly outside Kubernetes
+3. **Creates a temporary k3d cluster**, imports the built images, and verifies
    each one starts as a pod
+
+If an image directory contains a `smoke-cmd` file, its first line is passed
+as arguments to the container in phases 2 and 3 (e.g., `--version` or
+`spark-submit --version`). Without this file the default `ENTRYPOINT`/`CMD`
+is used.
 
 To run manually:
 
@@ -128,6 +139,30 @@ To bypass on a push (e.g., docs-only change):
 
 ```bash
 SKIP_SMOKE=1 git push
+```
+
+## Trivy vulnerability scan
+
+A Trivy scan runs on `git push` (via pre-push hook) after the smoke test.
+It checks every image under `images/` for fixable **CRITICAL** and **HIGH**
+severity vulnerabilities — the same severity filter and `ignore-unfixed`
+setting used by CI in `build.yml`. Unlike CI (which uploads SARIF results
+without blocking), the local hook **blocks the push** when fixable
+vulnerabilities are found so they can be addressed before review.
+
+Images are reused from the smoke-test build cache when available; otherwise
+Trivy builds them first.
+
+To run manually:
+
+```bash
+scripts/trivy-scan.sh
+```
+
+To bypass on a push:
+
+```bash
+SKIP_TRIVY=1 git push
 ```
 
 ## Pre-commit hooks
@@ -150,4 +185,5 @@ end-of-file fixer.
 | conftest | commit |
 | changie fragment reminder | commit |
 | changie fragment required | push |
-| smoke test (build + k3d) | push |
+| smoke test (build + container run + k3d) | push |
+| trivy vulnerability scan | push |
