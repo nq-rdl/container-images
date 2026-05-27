@@ -17,3 +17,24 @@ updates:
       interval: weekly
     commit-message:
       prefix: "image(bun-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/spark-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(spark-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/pyspark-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(pyspark-ubi9)"
+
+  - package-ecosystem: docker
+    directory: /images/spark-operator-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(spark-operator-ubi9)"
