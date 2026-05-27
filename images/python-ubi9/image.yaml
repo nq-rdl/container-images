@@ -14,9 +14,6 @@ runtime:
 tags:
   - "3.11"
   - "3.12"
-  - "3.13"
-  - "3.14"
-  - "3.15"
   - "latest"
 build_matrix:
   arg: PYTHON_VERSION
@@ -24,13 +21,7 @@ build_matrix:
     - version: "3.11"
       tags: ["3.11"]
     - version: "3.12"
-      tags: ["3.12"]
-    - version: "3.13"
-      tags: ["3.13", "latest"]
-    - version: "3.14"
-      tags: ["3.14"]
-    - version: "3.15"
-      tags: ["3.15"]
+      tags: ["3.12", "latest"]
 support:
   status: stable
   eol: "2029-10-31"

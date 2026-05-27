@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG UBI_VERSION=9.5
-ARG PYTHON_VERSION=3.13
+ARG PYTHON_VERSION=3.12
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
 
