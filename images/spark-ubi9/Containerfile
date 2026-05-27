@@ -51,7 +51,7 @@ RUN set -eux; \
         "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
     curl -fsSL -o /tmp/tini.asc \
         "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}.asc"; \
-    export GNUPGHOME="$(mktemp -d)"; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
     gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7 || \
     gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys 595E85A6B1B4779EA4DAAEC70B588DFF0527A9B7; \
     gpg --batch --verify /tmp/tini.asc /usr/bin/tini; \
@@ -72,13 +72,13 @@ RUN set -ex; \
 # Install Apache Spark — GPG-verified download from Apache archive
 # hadolint ignore=DL3003
 RUN set -ex; \
-    export SPARK_TMP="$(mktemp -d)"; \
+    SPARK_TMP="$(mktemp -d)"; export SPARK_TMP; \
     cd "$SPARK_TMP"; \
     curl -fsSL -o spark.tgz \
         "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz"; \
     curl -fsSL -o spark.tgz.asc \
         "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz.asc"; \
-    export GNUPGHOME="$(mktemp -d)"; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
     gpg --batch --keyserver hkps://keys.openpgp.org --recv-key "$SPARK_GPG_KEY" || \
     gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$SPARK_GPG_KEY"; \
     gpg --batch --verify spark.tgz.asc spark.tgz; \

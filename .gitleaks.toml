@@ -5,3 +5,7 @@ useDefault = true
 paths = [
   '''policy/.*\.rego''',
 ]
+regexTarget = "line"
+regexes = [
+  '''GPG_KEY=''',
+]
