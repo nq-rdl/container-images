@@ -11,9 +11,10 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
 
 ARG ZULU_REPO_VER=1.0.0-1
 ARG ZULU_REPO_SHA256=2724b8be277ec16196b8e9357ed5e506eb791f88f966965a4f4a8bd5c4acdcfe
+ARG ZULU_VERSION=21.0.11
 
 LABEL org.opencontainers.image.title="zulu21-jdk-ubi9"
-LABEL org.opencontainers.image.description="Azul Zulu JDK 21 on UBI9 minimal"
+LABEL org.opencontainers.image.description="Azul Zulu JDK ${ZULU_VERSION} on UBI9 minimal"
 LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
 LABEL org.opencontainers.image.vendor="Research Data Laboratory"
 LABEL org.opencontainers.image.licenses="GPL-2.0-only WITH Classpath-exception-2.0"
@@ -29,7 +30,7 @@ RUN set -eux; \
     rm -f /tmp/zulu-repo.rpm
 
 RUN microdnf install -y --nodocs \
-        zulu21-jdk \
+        "zulu21-jdk-${ZULU_VERSION}" \
         shadow-utils \
         tzdata \
         fontconfig \
