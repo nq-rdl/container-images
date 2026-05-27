@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1.7
+#
+# dbt-core on UBI9-minimal
+# Blueprint: dbt-labs/dbt-core docker/Dockerfile
+# Changes: base image swap (python:slim-bullseye -> UBI9), apt-get -> microdnf,
+#          multi-stage build to drop compiler toolchain, venv-based install
+#
+
+ARG UBI_VERSION=9.5
+
+# --- Build: compile dbt and native extensions ---
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION} AS builder
+
+ARG DBT_VERSION=1.11.11
+ARG DBT_ADAPTER=dbt-postgres
+ARG PYTHON_VERSION=3.11
+
+RUN microdnf install -y --nodocs \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-pip \
+        python${PYTHON_VERSION}-devel \
+        gcc \
+        libpq-devel \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+# hadolint ignore=DL3013
+RUN python${PYTHON_VERSION} -m venv /opt/dbt \
+    && /opt/dbt/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/dbt/bin/pip install --no-cache-dir \
+        "dbt-core==${DBT_VERSION}" \
+        ${DBT_ADAPTER:+"${DBT_ADAPTER}"}
+
+# --- Runtime ---
+FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+
+ARG DBT_VERSION=1.11.11
+ARG PYTHON_VERSION=3.11
+
+LABEL org.opencontainers.image.title="dbt-ubi9"
+LABEL org.opencontainers.image.description="dbt-core ${DBT_VERSION} with Python ${PYTHON_VERSION} on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+RUN microdnf install -y --nodocs \
+        python${PYTHON_VERSION} \
+        libpq \
+        git-core \
+        shadow-utils \
+        openssh-clients \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+COPY --from=builder /opt/dbt /opt/dbt
+
+ENV PYTHONIOENCODING=utf-8
+ENV LANG=C.UTF-8
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/opt/dbt/bin:${PATH}"
+
+RUN useradd -u 1001 -g 0 -m -d /home/dbt -s /sbin/nologin dbt
+
+USER 1001
+WORKDIR /home/dbt
+
+HEALTHCHECK CMD dbt --version || exit 1
+
+ENTRYPOINT ["dbt"]
+CMD ["--version"]
