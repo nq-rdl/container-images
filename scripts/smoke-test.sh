@@ -90,7 +90,7 @@ for entry in "${BUILT[@]}"; do
 
   echo "  Running ${name}..."
   # shellcheck disable=SC2086
-  if "$RUNTIME" run --rm "$tag" $smoke_args; then
+  if timeout 60 "$RUNTIME" run --rm "$tag" $smoke_args; then
     echo "  OK: ${name} runs (${RUNTIME})"
   else
     fail "${name} failed to run (${RUNTIME})"

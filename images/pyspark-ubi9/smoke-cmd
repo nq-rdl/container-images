@@ -1,1 +1,1 @@
-spark-submit --version
+/opt/spark/bin/spark-submit --version
