@@ -30,6 +30,7 @@ attempt_setup_fake_passwd_entry() {
           NSS_WRAPPER_GROUP="$(mktemp)"
           export LD_PRELOAD="$wrapper" NSS_WRAPPER_PASSWD NSS_WRAPPER_GROUP
           local mygid; mygid="$(id -g)"
+          # shellcheck disable=SC2016
           printf 'spark:x:%s:%s:${SPARK_USER_NAME:-anonymous uid}:%s:/bin/false\n' "$myuid" "$mygid" "$SPARK_HOME" > "$NSS_WRAPPER_PASSWD"
           printf 'spark:x:%s:\n' "$mygid" > "$NSS_WRAPPER_GROUP"
           break
@@ -59,7 +60,8 @@ if ! [ -z "${PYSPARK_DRIVER_PYTHON+x}" ]; then
 fi
 
 if [ -n "${HADOOP_HOME}"  ] && [ -z "${SPARK_DIST_CLASSPATH}"  ]; then
-  export SPARK_DIST_CLASSPATH="$($HADOOP_HOME/bin/hadoop classpath)"
+  SPARK_DIST_CLASSPATH="$("$HADOOP_HOME"/bin/hadoop classpath)"
+  export SPARK_DIST_CLASSPATH
 fi
 
 if ! [ -z "${HADOOP_CONF_DIR+x}" ]; then
@@ -91,7 +93,7 @@ case "$1" in
   executor)
     shift 1
     CMD=(
-      ${JAVA_HOME}/bin/java
+      "${JAVA_HOME}/bin/java"
       "${SPARK_EXECUTOR_JAVA_OPTS[@]}"
       -Xms"$SPARK_EXECUTOR_MEMORY"
       -Xmx"$SPARK_EXECUTOR_MEMORY"
