@@ -1,0 +1,22 @@
+name: zulu21-jdk-ubi9
+description: Azul Zulu JDK 21 on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+  - linux/arm64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: zulu-jdk
+  version: "21.0.11"
+tags:
+  - "21.0"
+  - "21.0.11"
+  - "latest"
+support:
+  status: stable
+  eol: "2031-09-01"
