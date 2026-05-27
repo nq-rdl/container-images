@@ -101,8 +101,8 @@ RUN set -ex; \
     ln -s "$(basename /opt/spark/examples/jars/spark-examples_*.jar)" /opt/spark/examples/jars/spark-examples.jar; \
     mv kubernetes/tests /opt/spark/; \
     mv data /opt/spark/; \
-    mv python/pyspark /opt/spark/python/pyspark/; \
-    mv python/lib /opt/spark/python/lib/; \
+    mv python/pyspark /opt/spark/python/pyspark; \
+    mv python/lib /opt/spark/python/lib; \
     chmod a+x /opt/decom.sh; \
     cd ..; \
     rm -rf "$SPARK_TMP"

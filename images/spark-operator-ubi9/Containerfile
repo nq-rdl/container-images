@@ -20,9 +20,12 @@ ARG TARGETARCH
 
 WORKDIR /workspace
 
+ARG SPARK_OPERATOR_SHA256=5bbf453f0f0ecb832e690a5b56bfaa6488c82e5b9d39c4e617bfb06a848d17f0
+
 RUN set -eux; \
     curl -fsSL -o /tmp/spark-operator.tar.gz \
         "https://github.com/kubeflow/spark-operator/archive/refs/tags/${SPARK_OPERATOR_VERSION}.tar.gz"; \
+    echo "${SPARK_OPERATOR_SHA256}  /tmp/spark-operator.tar.gz" | sha256sum -c -; \
     tar xzf /tmp/spark-operator.tar.gz -C /workspace --strip-components=1; \
     rm /tmp/spark-operator.tar.gz; \
     go mod download; \
