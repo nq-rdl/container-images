@@ -1,5 +1,5 @@
 name: python-ubi9
-description: Python runtime on UBI9 micro
+description: Python runtime on UBI9 minimal
 owners:
   - nq-rdl/platform
   - nq-rdl/data-engineering
@@ -7,7 +7,7 @@ platforms:
   - linux/amd64
 base:
   registry: registry.access.redhat.com
-  repository: ubi9/ubi-micro
+  repository: ubi9/ubi-minimal
   version: "9.5"
 runtime:
   name: python
