@@ -15,6 +15,7 @@ if ! gh attestation verify --help &>/dev/null 2>&1; then
   exit 1
 fi
 
+
 echo "==> Verifying attestations for ${IMAGE}..."
 gh attestation verify "oci://${IMAGE}" --repo nq-rdl/container-images
 
