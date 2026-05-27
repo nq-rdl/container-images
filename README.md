@@ -1,6 +1,6 @@
 # RDL Container Image Catalog
 
-UBI9-based container images for Research Data Laboratory workloads. Built, scanned, signed, and SBOM-attested in CI.
+UBI9-based container images for Research Data Laboratory workloads. Built, scanned, and attested in CI.
 
 ## Available images
 
@@ -19,7 +19,7 @@ Build provenance and SBOM attestations are attached via GitHub-native attestatio
 
 ```bash
 gh attestation verify oci://ghcr.io/nq-rdl/bun-ubi9:latest \
-  --owner nq-rdl
+  --repo nq-rdl/container-images
 ```
 
 ## Tag conventions

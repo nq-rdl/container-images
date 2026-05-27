@@ -28,8 +28,6 @@ Pin by `@sha256:…` digest in production manifests.
 ## Verify
 
 ```bash
-cosign verify \
-  --certificate-identity-regexp='^https://github.com/nq-rdl/container-images/.*' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  ghcr.io/nq-rdl/bun-ubi9:latest
+gh attestation verify oci://ghcr.io/nq-rdl/bun-ubi9:latest \
+  --repo nq-rdl/container-images
 ```

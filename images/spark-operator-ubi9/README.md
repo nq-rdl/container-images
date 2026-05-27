@@ -46,8 +46,6 @@ image:
 ## Verify
 
 ```bash
-cosign verify \
-  --certificate-identity-regexp='^https://github.com/nq-rdl/container-images/.*' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  ghcr.io/nq-rdl/spark-operator-ubi9:2.1.0
+gh attestation verify oci://ghcr.io/nq-rdl/spark-operator-ubi9:2.1.0 \
+  --repo nq-rdl/container-images
 ```

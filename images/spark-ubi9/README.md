@@ -43,8 +43,6 @@ COPY my-app.jar /opt/spark/jars/
 ## Verify
 
 ```bash
-cosign verify \
-  --certificate-identity-regexp='^https://github.com/nq-rdl/container-images/.*' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  ghcr.io/nq-rdl/spark-ubi9:3.5.6
+gh attestation verify oci://ghcr.io/nq-rdl/spark-ubi9:3.5.6 \
+  --repo nq-rdl/container-images
 ```
