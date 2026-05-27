@@ -1,0 +1,54 @@
+# python-ubi9
+
+Python runtime on Red Hat UBI9-micro. Built for each supported minor
+version via a shared Containerfile and `PYTHON_VERSION` build arg.
+
+## Pull
+
+```bash
+podman pull ghcr.io/nq-rdl/python-ubi9:3.13
+```
+
+## Supported tags
+
+| Tag | Meaning |
+|-----|---------|
+| `3.11` | Python 3.11.x on UBI9-micro |
+| `3.12` | Python 3.12.x on UBI9-micro |
+| `3.13` | Python 3.13.x on UBI9-micro |
+| `3.14` | Python 3.14.x on UBI9-micro |
+| `3.15` | Python 3.15.x on UBI9-micro |
+| `latest` | Alias for `3.13` |
+
+Pin by `@sha256:...` digest in production manifests.
+
+## Details
+
+| Field | Value |
+|-------|-------|
+| Base | `registry.access.redhat.com/ubi9/ubi-micro:9.5` |
+| Runtime | CPython (RPM-packaged) |
+| Platforms | linux/amd64 |
+| User | 1001 (non-root) |
+| Includes | python3, pip, setuptools |
+
+## Usage as base image
+
+```dockerfile
+FROM ghcr.io/nq-rdl/python-ubi9:3.13
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+CMD ["python", "app.py"]
+```
+
+## Verify
+
+```bash
+cosign verify \
+  --certificate-identity-regexp='^https://github.com/nq-rdl/container-images/.*' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  ghcr.io/nq-rdl/python-ubi9:3.13
+```
