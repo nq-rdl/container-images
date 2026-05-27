@@ -41,8 +41,6 @@ CMD ["-jar", "my-app.jar"]
 ## Verify
 
 ```bash
-cosign verify \
-  --certificate-identity-regexp='^https://github.com/nq-rdl/container-images/.*' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  ghcr.io/nq-rdl/zulu21-jre-headless-ubi9:latest
+gh attestation verify oci://ghcr.io/nq-rdl/zulu21-jre-headless-ubi9:latest \
+  --repo nq-rdl/container-images
 ```

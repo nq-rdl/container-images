@@ -28,7 +28,7 @@ rescanned daily. Results appear in the GitHub Security tab.
 ## Scope
 
 Security-relevant areas include base image vulnerabilities, supply-chain
-integrity (cosign signatures, SBOM attestations), runtime dependency CVEs,
+integrity (build provenance and SBOM attestations), runtime dependency CVEs,
 and CI/CD workflow configuration.
 
 This project does not operate a bug bounty program.
