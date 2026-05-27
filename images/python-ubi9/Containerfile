@@ -41,7 +41,7 @@ RUN echo "app:x:1001:0:app:/home/app:/sbin/nologin" >> /mnt/rootfs/etc/passwd \
     && chmod 775 /mnt/rootfs/home/app
 
 # ---------- stage 2: final runtime ----------
-FROM scratch
+FROM registry.access.redhat.com/ubi9/ubi-micro:${UBI_VERSION}
 
 ARG PYTHON_VERSION=3.13
 
