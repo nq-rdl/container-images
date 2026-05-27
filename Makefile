@@ -67,6 +67,6 @@ install-deps:
 	else \
 		echo "k3d: not found — installing ..."; \
 		TAG=v5.8.3; \
-		curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/v5.8.3/install.sh | TAG="$$TAG" bash; \
+		curl -fsSL "https://raw.githubusercontent.com/k3d-io/k3d/$${TAG}/install.sh" | TAG="$$TAG" bash; \
 	fi
 	@echo "── all dependencies installed ──"
