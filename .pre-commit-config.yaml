@@ -59,6 +59,14 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: trivy-scan
+        name: trivy vulnerability scan
+        entry: scripts/trivy-scan.sh
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: smoke-test
         name: smoke test (build + container run + k3d)
         entry: scripts/smoke-test.sh

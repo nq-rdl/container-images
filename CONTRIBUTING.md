@@ -94,6 +94,7 @@ pixi run policy-check-image-meta   # image.yaml tag convention checks
 pixi run policy-check-workflow-tags # build workflow tag compliance
 pixi run lint-containerfiles       # hadolint only
 pixi run pre-commit-run            # all pre-commit hooks
+pixi run trivy-scan                # Trivy vulnerability scan (CRITICAL/HIGH)
 pixi run smoke-test                # build all images + k3d cluster test
 ```
 
@@ -140,6 +141,27 @@ To bypass on a push (e.g., docs-only change):
 SKIP_SMOKE=1 git push
 ```
 
+## Trivy vulnerability scan
+
+A Trivy scan runs on `git push` (via pre-push hook) after the smoke tests.
+It checks every image under `images/` for fixable **CRITICAL** and **HIGH**
+severity vulnerabilities, matching the CI configuration in `build.yml`.
+
+Images are reused from the smoke-test build cache when available; otherwise
+Trivy builds them first.
+
+To run manually:
+
+```bash
+scripts/trivy-scan.sh
+```
+
+To bypass on a push:
+
+```bash
+SKIP_TRIVY=1 git push
+```
+
 ## Pre-commit hooks
 
 Pre-commit runs automatically on `git commit` and `git push` after hook
@@ -160,4 +182,5 @@ end-of-file fixer.
 | conftest | commit |
 | changie fragment reminder | commit |
 | changie fragment required | push |
+| trivy vulnerability scan | push |
 | smoke test (build + container run + k3d) | push |
