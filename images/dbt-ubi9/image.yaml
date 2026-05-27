@@ -1,0 +1,21 @@
+name: dbt-ubi9
+description: dbt-core with Python on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: dbt-core
+  version: "1.11.11"
+tags:
+  - "1.11"
+  - "1.11.11"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-12-01"
