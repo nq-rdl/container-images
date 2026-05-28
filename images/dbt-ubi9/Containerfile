@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# dbt-core on UBI9-minimal
+# dbt-core on UBI9-micro
 # Blueprint: dbt-labs/dbt-core docker/Dockerfile
-# Changes: base image swap (python:slim-bullseye -> UBI9), apt-get -> microdnf,
-#          multi-stage build to drop compiler toolchain, venv-based install
+# Changes: base image swap (python:slim-bullseye -> UBI9), install runtime
+#          packages into a UBI-micro rootfs, venv-based install
 #
 
 ARG UBI_VERSION=9.5
@@ -31,35 +31,43 @@ RUN python${PYTHON_VERSION} -m venv /opt/dbt \
         "dbt-core==${DBT_VERSION}" \
         ${DBT_ADAPTER:+"${DBT_ADAPTER}"}
 
+# --- Runtime package rootfs ---
+FROM registry.access.redhat.com/ubi9/ubi:${UBI_VERSION} AS runtime-rootfs
+
+ARG UBI_VERSION=9.5
+ARG PYTHON_VERSION=3.11
+
+RUN mkdir -p /mnt/rootfs \
+    && dnf install --installroot /mnt/rootfs --releasever 9 --setopt install_weak_deps=False --nodocs -y \
+        python${PYTHON_VERSION} \
+        libpq \
+        git-core \
+        openssh-clients \
+    && dnf --installroot /mnt/rootfs clean all \
+    && rm -rf /mnt/rootfs/var/cache/yum /mnt/rootfs/var/cache/dnf \
+    && mkdir -p /mnt/rootfs/home/dbt \
+    && chown 1001:0 /mnt/rootfs/home/dbt \
+    && echo 'dbt:x:1001:0:dbt user:/home/dbt:/sbin/nologin' >> /mnt/rootfs/etc/passwd
+
 # --- Runtime ---
-FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+FROM registry.access.redhat.com/ubi9/ubi-micro:${UBI_VERSION}
 
 ARG DBT_VERSION=1.11.11
 ARG PYTHON_VERSION=3.11
 
 LABEL org.opencontainers.image.title="dbt-ubi9"
-LABEL org.opencontainers.image.description="dbt-core ${DBT_VERSION} with Python ${PYTHON_VERSION} on UBI9 minimal"
+LABEL org.opencontainers.image.description="dbt-core ${DBT_VERSION} with Python ${PYTHON_VERSION} on UBI9 micro"
 LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
 LABEL org.opencontainers.image.vendor="Research Data Laboratory"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-RUN microdnf install -y --nodocs \
-        python${PYTHON_VERSION} \
-        libpq \
-        git-core \
-        shadow-utils \
-        openssh-clients \
-    && microdnf clean all \
-    && rm -rf /var/cache/yum /var/cache/dnf
-
+COPY --from=runtime-rootfs /mnt/rootfs/ /
 COPY --from=builder /opt/dbt /opt/dbt
 
 ENV PYTHONIOENCODING=utf-8
 ENV LANG=C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/opt/dbt/bin:${PATH}"
-
-RUN useradd -u 1001 -g 0 -m -d /home/dbt -s /sbin/nologin dbt
 
 USER 1001
 WORKDIR /home/dbt
