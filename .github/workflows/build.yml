@@ -225,7 +225,8 @@ jobs:
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
-          push-to-registry: true
+          # Not pushed to GHCR (push creates sha256-<digest> referrer tags); verified via the GitHub attestation API instead.
+          push-to-registry: false
 
       - name: Generate SBOM
         if: github.event_name != 'pull_request'
@@ -242,7 +243,7 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
           sbom-path: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.spdx.json
-          push-to-registry: true
+          push-to-registry: false
 
   publish-aliases:
     if: github.event_name != 'pull_request'

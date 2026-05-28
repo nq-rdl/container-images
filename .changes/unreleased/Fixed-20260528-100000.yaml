@@ -1,0 +1,3 @@
+kind: Fixed
+body: "Stop pushing attestations to GHCR (push-to-registry: false) to eliminate sha256-<digest> referrer tags; attestations remain verifiable via the GitHub attestation API (gh attestation verify --repo)."
+time: 2026-05-28T10:00:00.000000+00:00

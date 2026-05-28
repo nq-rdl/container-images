@@ -64,12 +64,15 @@ else
   fail "missing actions/attest-sbom (GitHub-native attestation avoids sha256-* ghost tags)"
 fi
 
-# Test: both attest steps must push attestations to the registry (OCI 1.1 referrers)
-PUSH_COUNT=$(grep -cE 'push-to-registry:[[:space:]]*true' "$WORKFLOW" || true)
-if [ "$PUSH_COUNT" -ge 2 ]; then
-  pass "both attest steps push attestations to registry (OCI referrers)"
+# Test: attestations must NOT be pushed to the registry — push-to-registry: true creates
+# sha256-<digest> OCI referrer tags in GHCR. Attestations are verified via the GitHub
+# attestation API instead (see scripts/verify-image.sh: gh attestation verify --repo).
+PUSH_TRUE=$(grep -cE 'push-to-registry:[[:space:]]*true' "$WORKFLOW" || true)
+PUSH_FALSE=$(grep -cE 'push-to-registry:[[:space:]]*false' "$WORKFLOW" || true)
+if [ "$PUSH_TRUE" -eq 0 ] && [ "$PUSH_FALSE" -ge 2 ]; then
+  pass "attestations are not pushed to registry (no sha256-* referrer tags)"
 else
-  fail "expected >= 2 push-to-registry: true entries, found ${PUSH_COUNT} (both attest-build-provenance and attest-sbom need it)"
+  fail "expected >= 2 push-to-registry: false and 0 true, found true=${PUSH_TRUE} false=${PUSH_FALSE} (push creates sha256-* referrer tags)"
 fi
 
 # Test: workflow permissions must include attestations: write and id-token: write
