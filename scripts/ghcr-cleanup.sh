@@ -14,8 +14,9 @@
 #   2. grace window  — anything created within GHCR_GRACE_MINUTES is never
 #                      deleted, so a Build Images run that overlaps this cleanup
 #                      cannot have its freshly published children removed.
-# A package whose current tag cannot be resolved is skipped entirely (keep all),
-# so a transient registry read never causes a destructive mistake.
+# A package whose current tag cannot be resolved — or resolves to an unexpected
+# manifest shape — is skipped entirely (keep all), so a transient registry read
+# or a surprising response never causes a destructive mistake.
 #
 # Usage:
 #   scripts/ghcr-cleanup.sh            # dry run — list what would be deleted
@@ -98,8 +99,14 @@ total_recent=0
 total_del=0
 
 for p in "${PACKAGES[@]}"; do
+  # Fields are joined with US (ASCII 0x1f), NOT tabs. An untagged version has an
+  # empty tags field; because tab is an IFS-whitespace character, `IFS=$'\t' read`
+  # collapses the empty field and shifts `created` into `tags`, which silently
+  # breaks both the real-tag test (every orphan looks "tagged") and the grace
+  # check (`created` ends up empty). US never appears in an id, digest, tag, or
+  # timestamp, so empty fields survive and `read` keeps the columns aligned.
   if ! vers="$(gh api --paginate "/orgs/${ORG}/packages/container/${p}/versions?per_page=100" \
-        --jq '.[] | [(.id|tostring), .name, ((.metadata.container.tags // []) | join(",")), .created_at] | @tsv' 2>"$ERRFILE")"; then
+        --jq '.[] | [(.id|tostring), .name, ((.metadata.container.tags // []) | join(",")), .created_at] | join("\u001f")' 2>"$ERRFILE")"; then
     # A genuine 404 means the package isn't published yet — benign, skip it.
     # Anything else (bad/again missing token, 401/403, network, rate limit) must
     # fail loudly rather than silently no-op as if all packages were clean.
@@ -115,7 +122,7 @@ for p in "${PACKAGES[@]}"; do
 
   declare -A keep=()
   real_digests=()
-  while IFS=$'\t' read -r id digest tags created; do
+  while IFS=$'\x1f' read -r id digest tags created; do
     [ -z "$id" ] && continue
     [ -z "$tags" ] && continue
     has_real=0
@@ -136,13 +143,34 @@ for p in "${PACKAGES[@]}"; do
         resolve_ok=0
         break
       fi
-      if ! child_digests="$(printf '%s' "$raw" | jq -r 'if .manifests then .manifests[].digest else empty end')"; then
-        resolve_ok=0
-        break
-      fi
-      while IFS= read -r child; do
-        [ -n "$child" ] && keep["$child"]=1
-      done <<< "$child_digests"
+      # Classify the manifest by structure (media-type agnostic):
+      #   index  -> a manifest list; its child platform manifests must be kept
+      #   image  -> a plain single-arch manifest; it has no child manifests
+      #   *      -> an unexpected/empty shape. Do NOT assume "no children" and
+      #             let the children fall through to deletion — fail closed and
+      #             keep everything, exactly as for an unresolvable tag.
+      manifest_kind="$(printf '%s' "$raw" | jq -r '
+        if (.manifests | type) == "array" then "index"
+        elif ((.config | type) == "object") and ((.layers | type) == "array") then "image"
+        else "unknown" end')" || manifest_kind="unknown"
+      case "$manifest_kind" in
+        index)
+          if ! child_digests="$(printf '%s' "$raw" | jq -r '.manifests[].digest // empty')"; then
+            resolve_ok=0
+            break
+          fi
+          while IFS= read -r child; do
+            [ -n "$child" ] && keep["$child"]=1
+          done <<< "$child_digests"
+          ;;
+        image)
+          : # single-arch image manifest — no child manifests to preserve
+          ;;
+        *)
+          resolve_ok=0
+          break
+          ;;
+      esac
     done
   fi
   if [ "$resolve_ok" -eq 0 ]; then
@@ -154,7 +182,7 @@ for p in "${PACKAGES[@]}"; do
   pkg_keep=0
   pkg_recent=0
   pkg_del=0
-  while IFS=$'\t' read -r id digest tags created; do
+  while IFS=$'\x1f' read -r id digest tags created; do
     [ -z "$id" ] && continue
     if [ -n "${keep[$digest]:-}" ]; then
       pkg_keep=$((pkg_keep + 1))
