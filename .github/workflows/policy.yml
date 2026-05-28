@@ -2,7 +2,7 @@ name: OPA Policy Check
 
 on:
   pull_request:
-    paths: ['images/**', 'policy/**', 'tests/**', '.github/workflows/build.yml', '.github/workflows/policy.yml']
+    paths: ['images/**', 'policy/**', 'scripts/**', 'tests/**', '.github/workflows/build.yml', '.github/workflows/policy.yml']
 
 permissions:
   contents: read
@@ -36,3 +36,11 @@ jobs:
 
       - name: Validate build workflow tag compliance
         run: bash tests/test-build-workflow-tags.sh
+
+  ghcr-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Test GHCR cleanup keep/delete logic
+        run: bash tests/test-ghcr-cleanup.sh
