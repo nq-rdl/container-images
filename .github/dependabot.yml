@@ -19,6 +19,13 @@ updates:
       prefix: "image(bun-ubi9)"
 
   - package-ecosystem: docker
+    directory: /images/dbt-ubi9
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "image(dbt-ubi9)"
+
+  - package-ecosystem: docker
     directory: /images/spark-ubi9
     schedule:
       interval: weekly
