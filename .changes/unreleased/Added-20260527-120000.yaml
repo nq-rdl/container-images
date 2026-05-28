@@ -1,3 +1,3 @@
 kind: Added
-body: dbt-core image on UBI9-micro with Python 3.11 and dbt-postgres adapter
+body: dbt-core image on UBI9-minimal with Python 3.11 and dbt-postgres adapter
 time: 2026-05-27T12:00:00.000000+00:00
