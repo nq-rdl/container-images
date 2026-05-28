@@ -14,8 +14,8 @@ podman pull ghcr.io/nq-rdl/bun-ubi9:latest
 
 ## Verify attestations
 
-Build provenance and SBOM attestations are attached via GitHub-native attestation
-(OCI 1.1 referrers). Verify with the GitHub CLI:
+Build provenance and SBOM attestations are generated via GitHub-native attestation
+and stored in GitHub's attestation API (not pushed to the registry). Verify with the GitHub CLI:
 
 ```bash
 gh attestation verify oci://ghcr.io/nq-rdl/bun-ubi9:latest \
