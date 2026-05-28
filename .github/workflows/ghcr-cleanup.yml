@@ -1,0 +1,66 @@
+name: GHCR Cleanup
+
+# Prunes attestation referrer tags (sha256-*) and orphaned untagged manifests
+# left behind by the daily "Build Images" rebuild, while preserving every live
+# multi-arch image and its platform children (see scripts/ghcr-cleanup.sh).
+#
+# Deleting package versions requires a token with delete:packages — the default
+# GITHUB_TOKEN cannot delete packages, so a secret named GHCR_CLEANUP_TOKEN
+# (PAT or fine-grained token with read:packages + delete:packages) is required.
+# Optionally set the repo variable GHCR_CLEANUP_USER to the token owner's
+# username (defaults to the triggering actor).
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # ~2h after the 06:00 UTC Build Images run; the script's
+                          # grace window absorbs any overlap with a slow build
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (list only, no deletions)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify cleanup token is configured
+        env:
+          GHCR_CLEANUP_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+        run: |
+          if [ -z "${GHCR_CLEANUP_TOKEN}" ]; then
+            echo "::error::Secret GHCR_CLEANUP_TOKEN is not set. Create a token with read:packages + delete:packages and add it as a repository or org secret."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR (needed to read manifests)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_CLEANUP_USER || github.actor }}
+          password: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+
+      - name: Run cleanup
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          GHCR_ORG: ${{ github.repository_owner }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "${EVENT_NAME}" = "schedule" ] || [ "${DRY_RUN}" = "false" ]; then
+            bash scripts/ghcr-cleanup.sh --execute
+          else
+            bash scripts/ghcr-cleanup.sh
+          fi

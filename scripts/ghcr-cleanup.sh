@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# Manifest-aware GHCR cleanup for this repository's published images.
+#
+# Removes attestation referrer tags (sha256-<digest>) and orphaned untagged
+# manifests left behind by repeated (daily) rebuilds, while KEEPING every
+# real-tagged version AND the per-platform child manifests that its manifest
+# list references. That preservation is the whole point: a multi-arch tag is an
+# index pointing at untagged platform manifests, so deleting those children
+# breaks the image — they are always kept.
+#
+# Two independent safeguards prevent deleting a live manifest:
+#   1. keep-set      — real tags and the children of their manifest lists.
+#   2. grace window  — anything created within GHCR_GRACE_MINUTES is never
+#                      deleted, so a Build Images run that overlaps this cleanup
+#                      cannot have its freshly published children removed.
+# A package whose current tag cannot be resolved — or resolves to an unexpected
+# manifest shape — is skipped entirely (keep all), so a transient registry read
+# or a surprising response never causes a destructive mistake.
+#
+# Usage:
+#   scripts/ghcr-cleanup.sh            # dry run — list what would be deleted
+#   scripts/ghcr-cleanup.sh --execute  # perform deletions
+#
+# Environment:
+#   GHCR_ORG            org/owner (default: nq-rdl)
+#   GHCR_PACKAGES       optional space/comma-separated package override; defaults
+#                       to the set derived from images/*/ plus their -ubiN aliases
+#   GHCR_GRACE_MINUTES  protect versions newer than this many minutes (default 360)
+#   GH_TOKEN            token with read:packages + delete:packages (delete needs it;
+#                       the Actions GITHUB_TOKEN cannot delete package versions)
+#
+set -euo pipefail
+
+ORG="${GHCR_ORG:-nq-rdl}"
+GRACE_MINUTES="${GHCR_GRACE_MINUTES:-360}"
+EXECUTE=0
+[ "${1:-}" = "--execute" ] && EXECUTE=1
+
+if ! [[ "$GRACE_MINUTES" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: GHCR_GRACE_MINUTES must be a non-negative integer (got: ${GRACE_MINUTES})" >&2
+  exit 1
+fi
+cutoff_epoch=$(( $(date +%s) - GRACE_MINUTES * 60 ))
+
+# Packages this repo owns: each image dir name + its -ubiN-stripped alias.
+# Only directories with a Containerfile are real images (matches the build and
+# trivy-rescan workflows), so scaffolding like images/node-ubi9/ is skipped.
+derive_packages() {
+  local d name
+  for d in images/*/; do
+    [ -f "${d}Containerfile" ] || continue
+    name="$(basename "$d")"
+    printf '%s\n' "$name"
+    if [[ "$name" =~ ^(.+)-ubi[0-9]+$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+    fi
+  done | sort -u
+}
+
+if [ -n "${GHCR_PACKAGES:-}" ]; then
+  read -ra PACKAGES <<< "${GHCR_PACKAGES//,/ }"
+else
+  mapfile -t PACKAGES < <(derive_packages)
+fi
+
+if [ "${#PACKAGES[@]}" -eq 0 ]; then
+  echo "ERROR: no packages to process (run from repo root or set GHCR_PACKAGES)" >&2
+  exit 1
+fi
+
+# A referrer (attestation) tag follows the OCI fallback convention
+# sha256-<64-hex-digest>; matching that precisely avoids misclassifying a real
+# image tag that merely starts with "sha256-".
+is_referrer_tag() { [[ "$1" =~ ^sha256-[0-9a-f]{64} ]]; }
+
+# Read a raw manifest: try skopeo, then docker buildx imagetools. Falls back on
+# failure (not just absence) so an auth/media hiccup in one tool still resolves.
+manifest_raw() {
+  local ref="$1" out
+  if command -v skopeo >/dev/null 2>&1; then
+    if out="$(skopeo inspect --raw "docker://${ref}" 2>/dev/null)" && [ -n "$out" ]; then
+      printf '%s' "$out"; return 0
+    fi
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    if out="$(docker buildx imagetools inspect --raw "${ref}" 2>/dev/null)" && [ -n "$out" ]; then
+      printf '%s' "$out"; return 0
+    fi
+  fi
+  return 1
+}
+
+DELLIST="$(mktemp)"
+ERRFILE="$(mktemp)"
+trap 'rm -f "$DELLIST" "$ERRFILE"' EXIT
+total_keep=0
+total_recent=0
+total_del=0
+
+for p in "${PACKAGES[@]}"; do
+  # Fields are joined with US (ASCII 0x1f), NOT tabs. An untagged version has an
+  # empty tags field; because tab is an IFS-whitespace character, `IFS=$'\t' read`
+  # collapses the empty field and shifts `created` into `tags`, which silently
+  # breaks both the real-tag test (every orphan looks "tagged") and the grace
+  # check (`created` ends up empty). US never appears in an id, digest, tag, or
+  # timestamp, so empty fields survive and `read` keeps the columns aligned.
+  if ! vers="$(gh api --paginate "/orgs/${ORG}/packages/container/${p}/versions?per_page=100" \
+        --jq '.[] | [(.id|tostring), .name, ((.metadata.container.tags // []) | join(",")), .created_at] | join("\u001f")' 2>"$ERRFILE")"; then
+    # A genuine 404 means the package isn't published yet — benign, skip it.
+    # Anything else (bad/again missing token, 401/403, network, rate limit) must
+    # fail loudly rather than silently no-op as if all packages were clean.
+    if grep -qiE 'HTTP 404|Not Found' "$ERRFILE"; then
+      printf '%-30s (not found in GHCR — skipping)\n' "$p"
+      continue
+    fi
+    echo "ERROR: failed to list versions for package '${p}' (not a 404 — aborting):" >&2
+    cat "$ERRFILE" >&2
+    exit 1
+  fi
+  [ -z "$vers" ] && { printf '%-30s (no versions)\n' "$p"; continue; }
+
+  declare -A keep=()
+  real_digests=()
+  while IFS=$'\x1f' read -r id digest tags created; do
+    [ -z "$id" ] && continue
+    [ -z "$tags" ] && continue
+    has_real=0
+    IFS=',' read -ra tag_arr <<< "$tags"
+    for t in "${tag_arr[@]}"; do
+      is_referrer_tag "$t" || has_real=1
+    done
+    [ "$has_real" -eq 1 ] && real_digests+=("$digest")
+  done <<< "$vers"
+
+  # keep-set = every real-tagged digest + the children of its manifest list
+  resolve_ok=1
+  if [ "${#real_digests[@]}" -gt 0 ]; then
+    for d in "${real_digests[@]}"; do
+      keep["$d"]=1
+      if ! raw="$(manifest_raw "ghcr.io/${ORG}/${p}@${d}")" || [ -z "$raw" ] \
+           || ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+        resolve_ok=0
+        break
+      fi
+      # Classify the manifest by structure (media-type agnostic):
+      #   index  -> a manifest list; its child platform manifests must be kept
+      #   image  -> a plain single-arch manifest; it has no child manifests
+      #   *      -> an unexpected/empty shape. Do NOT assume "no children" and
+      #             let the children fall through to deletion — fail closed and
+      #             keep everything, exactly as for an unresolvable tag.
+      manifest_kind="$(printf '%s' "$raw" | jq -r '
+        if (.manifests | type) == "array" then "index"
+        elif ((.config | type) == "object") and ((.layers | type) == "array") then "image"
+        else "unknown" end')" || manifest_kind="unknown"
+      case "$manifest_kind" in
+        index)
+          if ! child_digests="$(printf '%s' "$raw" | jq -r '.manifests[].digest // empty')"; then
+            resolve_ok=0
+            break
+          fi
+          while IFS= read -r child; do
+            [ -n "$child" ] && keep["$child"]=1
+          done <<< "$child_digests"
+          ;;
+        image)
+          : # single-arch image manifest — no child manifests to preserve
+          ;;
+        *)
+          resolve_ok=0
+          break
+          ;;
+      esac
+    done
+  fi
+  if [ "$resolve_ok" -eq 0 ]; then
+    printf '%-30s SKIP (could not resolve a tag; keeping ALL versions)\n' "$p"
+    unset keep
+    continue
+  fi
+
+  pkg_keep=0
+  pkg_recent=0
+  pkg_del=0
+  while IFS=$'\x1f' read -r id digest tags created; do
+    [ -z "$id" ] && continue
+    if [ -n "${keep[$digest]:-}" ]; then
+      pkg_keep=$((pkg_keep + 1))
+      continue
+    fi
+    # Not referenced by a live tag — but never delete within the grace window.
+    created_epoch="$(date -d "$created" +%s 2>/dev/null || true)"
+    if ! [[ "$created_epoch" =~ ^[0-9]+$ ]]; then
+      created_epoch=9999999999   # missing/unparseable timestamp → treat as recent → protect
+    fi
+    if [ "$created_epoch" -ge "$cutoff_epoch" ]; then
+      pkg_recent=$((pkg_recent + 1))
+      continue
+    fi
+    printf '%s\t%s\t%s\n' "$p" "$id" "${tags:-<UNTAGGED>}" >> "$DELLIST"
+    pkg_del=$((pkg_del + 1))
+  done <<< "$vers"
+  printf '%-30s keep=%-3s recent=%-3s delete=%s\n' "$p" "$pkg_keep" "$pkg_recent" "$pkg_del"
+  total_keep=$((total_keep + pkg_keep))
+  total_recent=$((total_recent + pkg_recent))
+  total_del=$((total_del + pkg_del))
+  unset keep
+done
+
+echo "----"
+echo "TOTAL keep=${total_keep} recent=${total_recent} delete=${total_del} (grace=${GRACE_MINUTES}m)"
+
+if [ "$EXECUTE" -ne 1 ]; then
+  echo "(dry run — re-run with --execute to delete)"
+  exit 0
+fi
+
+echo "=== EXECUTING DELETIONS ==="
+ok=0
+fail=0
+while IFS=$'\t' read -r p id tags; do
+  [ -z "$id" ] && continue
+  if gh api --method DELETE "/orgs/${ORG}/packages/container/${p}/versions/${id}" --silent 2>"$ERRFILE"; then
+    ok=$((ok + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL ${p}/${id} (${tags}): $(cat "$ERRFILE")"
+  fi
+done < "$DELLIST"
+echo "deleted=${ok} failed=${fail}"
+[ "$fail" -eq 0 ]

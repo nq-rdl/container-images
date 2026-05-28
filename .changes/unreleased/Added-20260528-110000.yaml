@@ -1,0 +1,3 @@
+kind: Added
+body: "Scheduled GHCR cleanup workflow (ghcr-cleanup.yml) that prunes attestation referrer tags and orphaned untagged manifests left by the daily rebuild, while preserving live multi-arch images and their platform child manifests."
+time: 2026-05-28T11:00:00.000000+00:00
