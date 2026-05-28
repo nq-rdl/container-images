@@ -58,7 +58,7 @@ install-deps:
 		OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
 		curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/$${OS}/$${ARCH}/kubectl"; \
 		curl -fsSL -o /tmp/kubectl.sha256 "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/$${OS}/$${ARCH}/kubectl.sha256"; \
-		echo "$$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c; \
+		echo "$$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c || exit 1; \
 		chmod +x /tmp/kubectl; \
 		sudo mv /tmp/kubectl /usr/local/bin/kubectl; \
 	fi
@@ -67,6 +67,6 @@ install-deps:
 	else \
 		echo "k3d: not found — installing ..."; \
 		TAG=v5.8.3; \
-		curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/v5.8.3/install.sh | TAG="$$TAG" bash; \
+		curl -fsSL "https://raw.githubusercontent.com/k3d-io/k3d/$${TAG}/install.sh" | TAG="$$TAG" bash; \
 	fi
 	@echo "── all dependencies installed ──"
