@@ -1,6 +1,6 @@
 # dbt-ubi9
 
-dbt-core with Python on Red Hat UBI9-minimal.
+dbt-core with Python on Red Hat UBI9-micro.
 
 ## Pull
 
@@ -20,7 +20,7 @@ Pin by `@sha256:…` digest in production manifests.
 
 | Field | Value |
 |-------|-------|
-| Base | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
+| Base | `registry.access.redhat.com/ubi9/ubi-micro:9.5` |
 | Runtime | dbt-core 1.11.11, Python 3.11 |
 | Default adapter | dbt-postgres |
 | Platforms | linux/amd64 |
