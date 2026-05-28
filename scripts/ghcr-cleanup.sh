@@ -43,10 +43,12 @@ fi
 cutoff_epoch=$(( $(date +%s) - GRACE_MINUTES * 60 ))
 
 # Packages this repo owns: each image dir name + its -ubiN-stripped alias.
+# Only directories with a Containerfile are real images (matches the build and
+# trivy-rescan workflows), so scaffolding like images/node-ubi9/ is skipped.
 derive_packages() {
   local d name
   for d in images/*/; do
-    [ -d "$d" ] || continue
+    [ -f "${d}Containerfile" ] || continue
     name="$(basename "$d")"
     printf '%s\n' "$name"
     if [[ "$name" =~ ^(.+)-ubi[0-9]+$ ]]; then
@@ -89,16 +91,25 @@ manifest_raw() {
 }
 
 DELLIST="$(mktemp)"
-trap 'rm -f "$DELLIST"' EXIT
+ERRFILE="$(mktemp)"
+trap 'rm -f "$DELLIST" "$ERRFILE"' EXIT
 total_keep=0
 total_recent=0
 total_del=0
 
 for p in "${PACKAGES[@]}"; do
   if ! vers="$(gh api --paginate "/orgs/${ORG}/packages/container/${p}/versions?per_page=100" \
-        --jq '.[] | [(.id|tostring), .name, ((.metadata.container.tags // []) | join(",")), .created_at] | @tsv' 2>/dev/null)"; then
-    printf '%-30s (not found in GHCR — skipping)\n' "$p"
-    continue
+        --jq '.[] | [(.id|tostring), .name, ((.metadata.container.tags // []) | join(",")), .created_at] | @tsv' 2>"$ERRFILE")"; then
+    # A genuine 404 means the package isn't published yet — benign, skip it.
+    # Anything else (bad/again missing token, 401/403, network, rate limit) must
+    # fail loudly rather than silently no-op as if all packages were clean.
+    if grep -qiE 'HTTP 404|Not Found' "$ERRFILE"; then
+      printf '%-30s (not found in GHCR — skipping)\n' "$p"
+      continue
+    fi
+    echo "ERROR: failed to list versions for package '${p}' (not a 404 — aborting):" >&2
+    cat "$ERRFILE" >&2
+    exit 1
   fi
   [ -z "$vers" ] && { printf '%-30s (no versions)\n' "$p"; continue; }
 
@@ -181,11 +192,11 @@ ok=0
 fail=0
 while IFS=$'\t' read -r p id tags; do
   [ -z "$id" ] && continue
-  if gh api --method DELETE "/orgs/${ORG}/packages/container/${p}/versions/${id}" --silent 2>/tmp/ghcr-del.err; then
+  if gh api --method DELETE "/orgs/${ORG}/packages/container/${p}/versions/${id}" --silent 2>"$ERRFILE"; then
     ok=$((ok + 1))
   else
     fail=$((fail + 1))
-    echo "FAIL ${p}/${id} (${tags}): $(cat /tmp/ghcr-del.err)"
+    echo "FAIL ${p}/${id} (${tags}): $(cat "$ERRFILE")"
   fi
 done < "$DELLIST"
 echo "deleted=${ok} failed=${fail}"
