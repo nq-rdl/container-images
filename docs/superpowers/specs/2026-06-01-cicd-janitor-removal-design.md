@@ -1,6 +1,6 @@
 # CI/CD Pipeline Rework: Eliminate the GHCR Cleanup Janitor
 
-- **Date:** 2026-06-01
+- **Date:** 2026-06-01 (revised 2026-06-02 after `/codex:adversarial-review`)
 - **Status:** Approved (design) — pending plan + implementation
 - **Branch:** `chore/review-workflow`
 - **Supersedes:** Issue #36 (*feat: scheduled GHCR cleanup workflow*) and its PR — to be closed, not merged.
@@ -14,239 +14,257 @@ every day** — a downstream mop for an upstream leak.
 
 ### Evidence (live GHCR, 2026-06-01)
 
-`bun-ubi9` package state:
-
-| Metric | Count |
-|---|---|
-| Total versions | 12 |
-| Tagged versions | 1 |
-| Untagged orphan manifests | 11 |
-| `sha256-*` referrer tags | 0 |
-
-Two findings:
+`bun-ubi9`: 12 versions total — **1 tagged, 11 untagged, 0 `sha256-*`**.
 
 1. The `sha256-*` referrer-tag problem is **already solved** (0 found) by prior
    commits (`provenance: false`, `sbom: false`, attestation `push-to-registry:
    false`). Four prior band-aid commits fought this.
-2. The remaining churn is **untagged orphan manifests** (11 vs. 1 tagged). With
-   ~20 packages (each `-ubi9` image plus its stripped alias such as `bun`), all
-   multi-arch, the daily rebuild orphans roughly three manifests per package per
-   day → thousands of orphans per year.
+2. The remaining churn is **untagged orphan manifests**. ~20 packages (each
+   `-ubi9` image plus its stripped alias), all multi-arch; the daily rebuild
+   orphans ~3 manifests per package per day → thousands of orphans per year.
 
 ### Root cause
 
-Base images are pinned by **floating tag**, not digest:
+Bases are pinned by **floating tag via ARG**, and builds are not reproducible:
 
 ```dockerfile
 ARG UBI_VERSION=9.5
 FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
 ```
 
-The daily build (`build.yml` → `schedule: cron '0 6 * * *'`) exists to pull
-Red Hat's in-place patches to the `9.5` tag. But the build is **not
-reproducible** (microdnf/curl fetch latest), so even on days when nothing
-changed it produces a new digest and orphans the previous one. The
-`publish-aliases` job re-points stripped aliases (`bun` → `bun-ubi9` digest)
-daily too, doubling the churn.
-
-Separately, the `ARG`-interpolated `FROM` means **Dependabot's docker updater
-cannot parse the base** — the per-image Dependabot docker entries that already
-exist in `.github/dependabot.yml` are effectively no-ops on the base today.
+The daily build (`build.yml` → `schedule: cron '0 6 * * *'`) re-pushes a new
+digest every morning even when nothing changed, orphaning the prior one;
+`publish-aliases` re-points stripped aliases daily too. Separately, the
+`ARG`-interpolated `FROM` means **Dependabot's docker updater cannot parse the
+base** — verified: **all 11** Containerfiles use this pattern, so the existing
+Dependabot docker entries bump **zero** bases today.
 
 ## 2. Goals / Non-goals
 
 **Goals**
 
-- Stop generating orphaned manifests at the source, so no scheduled cleanup is
-  ever needed.
-- Make the registry a deterministic projection of git: a digest is pushed only
-  when a commit changes an image's inputs.
-- Make the existing (currently inert) Dependabot docker config actually work.
-- One-time reset of the accumulated backlog (no active consumers today).
+- Stop generating orphaned manifests at the source → no recurring scheduled
+  cleanup needed.
+- Make the registry change **only via merged commits** (a deterministic,
+  auditable projection of git for the *base layer*).
+- Replace the inert Dependabot docker config with a **FROM-aware, in-repo base
+  drift-checker** that covers every stage of every image and produces zero
+  registry churn.
+- Strengthen the Trivy rescan into a real CVE radar now that it is the primary
+  one (scan every published tag).
+- One-time, reachability-safe reset of the accumulated backlog.
 - Close issue #36 / its PR as superseded.
 
-**Non-goals**
+**Non-goals (explicitly deferred)**
 
-- No base version bump (`9.5` → `9.6`) — separate content change.
-- No removal of the empty `node-ubi9/` placeholder (correctly skipped by
-  `discover` already).
-- No unrelated refactors of Containerfiles or other workflows.
-- No change to the attestation / SBOM / Trivy-on-build behavior (already correct).
+- Auto-merge of bump PRs (human reviews/merges; documented).
+- Auto-opening issues from the rescan (radar surfaces SARIF; notification is a
+  later enhancement).
+- RPM/pip lockfiles (build-time package determinism — see §7).
+- Renovate.
+- Base `9.5` → `9.6` bump; removing the empty `node-ubi9/` placeholder;
+  unrelated refactors of `docs.yml.tmpl`, policy rego, or other workflows.
 
 ## 3. Design principle
 
-> The registry state is a deterministic projection of git. Nothing is pushed
-> unless a commit changed the inputs. Therefore nothing needs to be cleaned up
-> on a schedule.
+> The registry's **base layer** is a deterministic projection of git: a digest
+> is pushed only when a merged commit changes an image's inputs. Build-time
+> package managers (`microdnf`, `pip`, downloaded binaries) are **not** locked,
+> so the image is reproducible w.r.t. the pinned base but not bit-for-bit
+> overall — see §7 for the consequences and the non-base remediation path.
+
+Some orphan accumulation is inherent to mutable tags (moving `latest` to a new
+digest always orphans the prior target). The goal is not literally zero
+orphans; it is to drop the rate from **daily/autonomous** to
+**per-real-change/git-traceable**, low enough that no scheduled janitor is
+needed and any future prune is a rare, manual, reachability-safe operation.
 
 ## 4. Changes
 
 ### 4.1 Digest-pin every base image (root-cause fix)
 
-Convert each `FROM` that references a Red Hat UBI base from an
-`ARG`-interpolated floating tag to an inline, Dependabot-managed,
-digest-pinned form:
+For every `FROM` that references an **external registry** (UBI bases *and*
+`golang` in spark-operator's builder stage), convert from ARG-interpolated
+floating tag to an inline, digest-pinned form:
 
 ```dockerfile
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:<index-digest>
 ```
 
-- Keep the human-readable tag **and** append the `@sha256:` of the **manifest
-  list (index) digest** so multi-arch builds keep working.
-- Resolve the current index digest per base at implementation time
-  (`docker buildx imagetools inspect <ref> --format '{{json .Manifest}}' | jq -r .digest`
-  or `skopeo inspect --raw`).
-- Multi-stage files get every `FROM` pinned. Known multi-base file: `dbt-ubi9`
-  uses `ubi9/ubi-minimal` (builder), `ubi9/ubi` (rootfs), `ubi9/ubi-micro`
-  (runtime).
-- Remove the now-redundant `ARG UBI_VERSION` default where it only fed the
-  `FROM` (verify per file; `dbt` also uses `--releasever 9`, which stays).
-- The `build_matrix.arg` (runtime version, e.g. zulu/dbt version) is unrelated
-  and unchanged.
+- Append the `@sha256:` of the **manifest-list (index) digest** so multi-arch
+  builds keep working. Resolve per base at implementation time (`crane digest
+  <ref>:<tag>` returns the index digest).
+- Pin **every** `FROM` in multi-stage files. Known: `dbt` (`ubi-minimal`
+  builder, `ubi` rootfs, `ubi-micro` runtime); `spark-operator` (`golang`
+  builder, `ubi-minimal` runtime).
+- Remove the now-redundant `ARG UBI_VERSION`/`ARG GO_VERSION` defaults where they
+  only fed `FROM` (verify per file; `dbt`'s `--releasever 9` stays). Runtime
+  `build_matrix.arg` values (zulu/dbt/python versions) are unrelated and
+  unchanged.
 
-### 4.2 Drop the daily build schedule
+### 4.2 Drop the daily build schedule; scope alias publishing
 
 In `.github/workflows/build.yml`:
 
-- Remove the `schedule:` trigger (`cron '0 6 * * *'`).
-- Remove the `schedule`-specific branch in the `discover` step (the
-  `EVENT_NAME == 'schedule'` → build-all path).
+- Remove the `schedule:` trigger (`cron '0 6 * * *'`) and the
+  `EVENT_NAME == 'schedule'` build-all branch in `discover`.
+- Scope `publish-aliases` to the images in the triggering build matrix instead
+  of looping all `images/*/`. (Efficiency, not a churn fix — `imagetools create`
+  is content-addressed, so unchanged aliases already produce no new version.)
 
-Rebuilds then fire on: push-to-main (path-filtered to `images/**` +
-`build.yml`), pull_request (build-only, no push), `workflow_dispatch`, and
-**merged Dependabot digest-bump PRs**. `publish-aliases` already runs only on
-non-PR events, so it now re-points aliases only on real changes — daily alias
-churn disappears for free.
+Rebuilds then fire only on: push-to-main (path-filtered), PR (build-only, no
+push), `workflow_dispatch`, and **merged base-bump PRs** from the drift-checker.
 
-### 4.3 Keep `trivy-scheduled-rescan.yml` unchanged
+### 4.3 Strengthen the Trivy rescan (now the primary CVE radar)
 
-It is the correct pattern: a read-only daily CVE radar that scans `:latest` and
-uploads SARIF (no registry writes, no churn). It is the safety net that surfaces
-new CVEs between digest bumps. (Optional future enhancement, out of scope: open
-an issue when a fixable CVE appears — noted, not implemented.)
+`trivy-scheduled-rescan.yml`: expand the matrix to scan **every published tag**
+derived from each `image.yaml` (e.g. python `3.11` *and* `3.12`/`latest`), not
+just `:latest`. Keep `exit-code: '0'` and SARIF upload (`if: always()`) so a
+finding never kills the radar. (Auto-issue notification deferred — §2.)
 
-### 4.4 One-time GHCR reset
+### 4.4 In-repo base drift-checker (the bump mechanism)
 
-Order chosen to avoid any window where a package is empty and to avoid touching
-package visibility/settings:
+New scheduled workflow `.github/workflows/base-drift.yml` (replaces the removed
+Dependabot docker entries):
 
-1. Land all code changes and merge to `main`.
-2. `workflow_dispatch` Build Images with `image=all` → pushes fresh, current,
-   intentional digests for every image (tags them `latest`, version tags, etc.).
-3. Verify a sample (`gh attestation verify`, tag resolution).
-4. **Delete only untagged orphan versions** of this repo's packages — the
-   `-ubi9` images and their stripped aliases — via
-   `gh api --method DELETE /orgs/nq-rdl/packages/container/<pkg>/versions/<id>`.
-   Because step 2 freshly tagged the current digests, orphan-only deletion
-   cannot remove a live image.
+- Parse **every** `FROM <ref>:<tag>@sha256:<digest>` across `images/*/Containerfile`.
+- For each, resolve the live index digest of `<ref>:<tag>` (`crane digest`).
+- If it differs from the pinned `<digest>`, update the `FROM` line and open (or
+  update) a single bump PR per image (`peter-evans/create-pull-request` or `gh`).
+- **Zero registry writes** — it only edits files and opens PRs. The registry
+  still changes solely when a human merges the PR (→ build-on-merge).
+- Also remove the 10 `package-ecosystem: docker` blocks from
+  `.github/dependabot.yml`; keep the `github-actions` block.
 
-Safety requirements for the purge:
+### 4.5 One-time GHCR reset (reachability-safe)
 
-- **Scoped allowlist**: targets derived from `images/*/` directory names plus
-  their alias-stripped names (`{service}-ubi{N}` → `{service}`). Anything not in
-  that set (e.g. `fhir-jit`) is never touched.
-- **Dry-run first**: print every package + version id + tags that would be
-  deleted; require explicit confirmation before any DELETE.
-- **Fail-closed**: if a package or version can't be classified, skip it (keep).
-- This is a **one-shot operational step**, delivered as a documented, dry-run-
-  default script (`scripts/ghcr-purge.sh`) — it is **not** wired into CI or any
-  schedule. (Whole-package deletion is available as an explicit nuclear option
-  if a truly pristine registry is wanted, accepting visibility re-config.)
+Order avoids any empty-package window and never deletes a live manifest:
 
-### 4.5 Close issue #36 and its PR
+1. Land all code changes; merge to `main`.
+2. `workflow_dispatch` Build Images `image=all` → push fresh current digests.
+3. Verify a sample (`gh attestation verify`, tag resolution, multi-arch pull).
+4. **Reachability-safe purge** via `scripts/ghcr-purge.sh` (new):
+   - Build a **keep-set** = every tagged version's digest **plus every child
+     manifest** referenced by each tagged index (resolve indexes with
+     `crane manifest`/`skopeo`).
+   - Delete only versions whose digest is **not** in the keep-set.
+   - **Scoped allowlist** to this repo's packages (`images/*/` names + their
+     `{service}-ubi{N}`→`{service}` aliases); never touch others (e.g.
+     `fhir-jit`).
+   - **Dry-run default**: print package, version id, digest, tags, and
+     keep/delete reason; require explicit confirmation before any DELETE.
+   - **Fail-closed**: any version that can't be classified (index unresolvable)
+     is kept.
+   - One-shot operational script — **not** wired into CI or any schedule.
 
-Comment explaining the root-cause fix (digest-pin + commit-driven rebuilds)
-replaces the janitor, then close both as superseded.
+### 4.6 Close issue #36 and its PR
 
-### 4.6 Tests (TDD — written before the edits)
+Comment explaining the root-cause fix replaces the janitor; close both as
+superseded.
 
-Fast, registry-free static assertions:
+### 4.7 Tests (TDD — written before the edits)
+
+**Fast, registry-free static assertions** (run in pre-commit + CI):
 
 - Extend `tests/test-build-workflow-tags.sh`: assert `build.yml` has **no**
-  `schedule:`/`cron` trigger, while still having `pull_request` and
-  `workflow_dispatch`. Keep every existing assertion green (`provenance: false`,
-  `sbom: false`, GitHub-native attest, `push-to-registry: false` ×2, no cosign,
-  `imagetools create`).
+  `schedule`/`cron` trigger; still has `pull_request` + `workflow_dispatch`.
+  Keep all existing assertions green.
 - New `tests/test-base-images-pinned.sh`: for every `images/*/Containerfile`,
-  every `FROM` line referencing an **external registry** base must contain
-  `@sha256:` and must not use an unpinned `${...}` interpolation. Stage-to-stage
-  references (`FROM <stage> AS …` / `COPY --from=<stage>`) and `FROM scratch` are
-  exempt. Iterate all images so new ones are covered automatically.
-- Wire the new test into a new pixi task (`policy-check-base-pinning`) and add it
-  to the `policy-check` aggregate so it runs in CI and pre-commit.
+  every `FROM` referencing an **external registry** contains `@sha256:` and no
+  unpinned `${...}`. Stage refs (`FROM <stage> AS …`, `COPY --from=`) and
+  `FROM scratch` are exempt. Iterates all images so new ones are covered.
+- New pixi task `policy-check-base-pinning`, added to the `policy-check`
+  aggregate.
 
-### 4.7 Docs + changelog
+**Registry-backed validation** (CI job on PR, network available):
 
-- `CONTRIBUTING.md`: under "Containerfile conventions", replace "Pin base image
-  and runtime versions via `ARG`" with digest-pin guidance (`:tag@sha256:…` so
-  Dependabot manages updates). Update the "Production usage" note: tags are still
-  mutable, but a rebuild is now triggered by a commit / Dependabot digest bump,
-  not a daily cron.
-- `README.md`: one line noting builds are digest-pinned / reproducible w.r.t. the
-  base.
+- `validate-base-pins`: for each pinned `<ref>@<digest>`, assert
+  `crane manifest` resolves to an **index** whose `.manifests[].platform` set
+  includes every platform declared in that image's `image.yaml`. Required PR
+  check. (Closes finding #7 — a single-arch pin would pass the static test but
+  break the arm64 push.)
+
+**Drift-checker self-test**: a `bash -n` + unit check that the parser detects a
+drifted vs. up-to-date pinned digest on fixtures (one current, one stale, one
+malformed → kept).
+
+### 4.8 Docs + changelog
+
+- `CONTRIBUTING.md`: replace "Pin base image and runtime versions via `ARG`"
+  with digest-pin guidance (`:tag@sha256:…`, bumped by the drift-checker PR).
+  Update "Production usage": a rebuild is triggered by a merged commit / drift
+  PR, not a daily cron. Add a **Rollback** subsection: revert the digest-bump
+  commit and `workflow_dispatch` a rebuild of the last known-good SHA.
+- `README.md`: one line noting builds are digest-pinned w.r.t. the base.
 - `changie new` fragment (required by repo process).
 
 ## 5. Components & interfaces (isolation view)
 
-| Unit | Contract | Independently testable by |
+| Unit | Contract | Tested by |
 |---|---|---|
-| Containerfiles | every base `FROM` is digest-pinned | `tests/test-base-images-pinned.sh` |
-| `build.yml` | triggers = commit / PR / dispatch only (no schedule) | `tests/test-build-workflow-tags.sh` |
-| `trivy-scheduled-rescan.yml` | read-only CVE radar (unchanged) | n/a (unchanged) |
-| Dependabot (`dependabot.yml`) | opens base digest-bump PRs (now effective) | manual verify post-merge |
-| `scripts/ghcr-purge.sh` | scoped, dry-run-default, fail-closed one-shot | dry-run output review |
+| Containerfiles | every external base `FROM` is index-digest-pinned | `test-base-images-pinned.sh` + `validate-base-pins` |
+| `build.yml` | triggers = commit / PR / dispatch only; aliases scoped to matrix | `test-build-workflow-tags.sh` |
+| `trivy-scheduled-rescan.yml` | scans every published tag; read-only radar | matrix derived from `image.yaml` |
+| `base-drift.yml` | drift → bump PR; zero registry writes | drift-checker self-test |
+| `scripts/ghcr-purge.sh` | keep-set (tagged + children); scoped; dry-run; fail-closed | dry-run output review |
+| `dependabot.yml` | github-actions only (docker entries removed) | n/a |
 
 ## 6. Data flow (after)
 
 ```
-UBI base moves
-   └─> Dependabot opens digest-bump PR (weekly)
-          └─> CI builds the PR (no push)
-                 └─> merge → push-to-main builds+pushes that image's new digest,
-                       re-points its aliases
-Trivy rescan scans :latest daily (radar) — independent, no writes
-Quiet weeks: zero registry writes, zero orphans.
+Base index digest moves
+   └─> base-drift.yml (scheduled) opens a per-image bump PR (no registry write)
+          └─> human reviews + merges
+                 └─> push-to-main builds+pushes that image's new digest,
+                       re-points its (matrix-scoped) aliases
+Trivy rescan scans EVERY published tag daily (radar) — independent, no writes
+Quiet days: zero registry writes, zero new orphans.
 ```
 
-## 7. Security posture & tradeoffs
+## 7. Security posture & tradeoffs (honest)
 
-- **Before:** preemptive same-day patching (rebuild every morning) at the cost of
-  daily churn.
-- **After:** patching is commit-driven via Dependabot (weekly cadence) plus the
-  daily rescan as a CVE radar. Patch latency widens from ~hours to up to ~1 week
-  (or faster via a rescan-prompted manual bump / dispatch).
+- **Before:** the daily rebuild preemptively refreshed *everything* — base, RPMs
+  (`microdnf`), pip deps, downloaded binaries — at the cost of daily churn.
+- **After:** the **base** is refreshed via drift PRs (commit-driven). Build-time
+  packages (RPM/pip/binaries) are **not** auto-refreshed and are **not** locked,
+  so a CVE fixed only in an RPM/PyPI dep will **not** move the base digest and
+  will **not** trigger a drift PR.
+- **Radar + remediation:** the daily Trivy rescan (now scanning every tag) is the
+  detection path for *all* CVEs incl. non-base ones; remediation for a non-base
+  finding is a `workflow_dispatch` rebuild (re-pulls latest RPM/pip), or a normal
+  commit. **Rollback:** revert the digest-bump commit + dispatch a rebuild of the
+  last known-good SHA.
 - Accepted because there are no active consumers today and every registry write
-  becomes auditable (tied to a reviewed commit). If tighter cadence is wanted
-  later, set the Dependabot docker interval to `daily` (still no orphans — each
-  bump is one commit) or add Renovate; both are out of scope here.
+  becomes tied to a reviewed commit. Tighter cadence later = drift-checker on a
+  shorter cron, RPM/pip lockfiles, or auto-merge — all deferred (§2).
 
 ## 8. Rollout sequence
 
-1. TDD red: add/extend tests → they fail.
-2. Implement: digest-pin Containerfiles; remove `build.yml` schedule; add pixi
-   task; docs; changie fragment → tests green; `pixi run lint-all` green.
-3. Adversarial review of plan and diffs (`/codex:adversarial-review`); address
-   findings.
-4. PR → CI green → merge.
-5. `workflow_dispatch` build-all → fresh digests.
-6. Dry-run purge → confirm → delete untagged orphans.
+1. TDD red: add/extend `test-base-images-pinned.sh`, `test-build-workflow-tags.sh`
+   schedule assertion, drift-checker self-test → fail.
+2. Implement: digest-pin all Containerfiles; remove `build.yml` schedule + scope
+   aliases; expand rescan matrix; add `base-drift.yml`; trim `dependabot.yml`;
+   `ghcr-purge.sh`; docs; changie → static tests + `pixi run lint-all` green.
+3. Adversarial review of the diffs (`/codex:adversarial-review`); address.
+4. PR → CI green (incl. `validate-base-pins`) → merge.
+5. `workflow_dispatch` build-all → fresh digests; verify multi-arch pulls.
+6. `ghcr-purge.sh` dry-run → confirm → reachability-safe delete.
 7. Close issue #36 + PR.
 
 ## 9. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Dependabot still can't bump (config/format) | Use `:tag@sha256:` inline form Dependabot supports; verify a real bump PR appears post-merge |
-| Image goes stale if no bump arrives | Daily Trivy rescan surfaces CVEs; can drop Dependabot to `daily` or add a low-freq safety rebuild later |
-| Many Dependabot PRs at once | Optional grouping for the docker ecosystem (follow-up, out of scope) |
-| Purge deletes a live image | Build-all *before* purge; orphan-only deletion; scoped allowlist; dry-run + confirm; fail-closed |
-| Removing `ARG UBI_VERSION` breaks a build | Verify each Containerfile individually; smoke-test build in CI/pre-push |
-| Multi-arch base pinned to a per-arch digest | Pin the manifest-list (index) digest, not a platform child |
+| Purge deletes a live multi-arch child | Keep-set = tagged digests **+ referenced children**; build-all before purge; dry-run + confirm; fail-closed |
+| Drift-checker misses a FROM (multi-stage) | Parser iterates **all** FROMs; self-test on fixtures; `validate-base-pins` ensures every pinned digest is a valid index |
+| Single-arch digest pinned by mistake | `validate-base-pins` required PR check asserts index covers all `image.yaml` platforms |
+| Non-base CVE never triggers rebuild | Rescan scans every tag (radar) → dispatch rebuild (remediation); documented |
+| Image goes stale if a drift PR sits unmerged | Reviewer ownership (CODEOWNERS) — noted follow-up; auto-merge deferred |
+| Removing `ARG UBI_VERSION` breaks a build | Verify each Containerfile; PR build + smoke test |
+| `golang` builder base unpinned | Treated as an external base — pinned and drift-tracked like UBI |
 
 ## 10. Out of scope
 
-- Base `9.5` → `9.6` bump.
-- Removing `node-ubi9/` placeholder.
-- Rescan → auto-issue enhancement.
-- Renovate / Dependabot grouping.
-- Any change to `docs.yml.tmpl`, policy rego, or unrelated workflows.
+Auto-merge; rescan auto-issue notifications; RPM/pip lockfiles; Renovate;
+Dependabot PR grouping; base `9.5`→`9.6`; removing `node-ubi9/`; changes to
+`docs.yml.tmpl`, policy rego, or unrelated workflows.
