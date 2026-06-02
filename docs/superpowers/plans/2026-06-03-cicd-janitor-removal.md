@@ -332,9 +332,13 @@ Replace the `discover` job in `.github/workflows/trivy-scheduled-rescan.yml` wit
             else
               TAGS=$(yq -r '((.tags // []) + ["latest"]) | unique | .[]' "$yaml")
             fi
+            # Also scan the stripped convenience alias (e.g. python-ubi9 -> python).
+            alias=""
+            if [[ "$name" =~ ^(.+)-ubi[0-9]+$ ]]; then alias="${BASH_REMATCH[1]}"; fi
             while IFS= read -r tag; do
               [ -z "$tag" ] && continue
               MATRIX=$(echo "$MATRIX" | jq --arg i "$name" --arg t "$tag" '. + [{"image":$i,"tag":$t}]')
+              [ -n "$alias" ] && MATRIX=$(echo "$MATRIX" | jq --arg i "$alias" --arg t "$tag" '. + [{"image":$i,"tag":$t}]')
             done <<< "$TAGS"
           done < <(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -print)
           echo "matrix=$(echo "$MATRIX" | jq -c '.')" >> "$GITHUB_OUTPUT"
@@ -438,6 +442,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: imjasonh/setup-crane@v0.4
 
+      - name: Install yq
+        run: |
+          YQ_VERSION=4.44.6
+          curl -fsSL -o /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          chmod +x /usr/local/bin/yq
+
       - name: Resolve drift and validate new index
         id: drift
         env:
@@ -448,8 +459,14 @@ jobs:
           yaml="images/${IMAGE}/image.yaml"
           changed=0
 
-          # Platforms this image must support (default linux/amd64).
-          mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml" 2>/dev/null || echo "linux/amd64")
+          # Platforms this image must support (default linux/amd64). No silent fallback:
+          # a missing yq or empty platform list is a hard error, not amd64-only.
+          if [ -f "$yaml" ]; then
+            mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml")
+          else
+            WANT=(linux/amd64)
+          fi
+          [ "${#WANT[@]}" -gt 0 ] || { echo "::error::${yaml} declares no platforms"; exit 1; }
 
           while IFS= read -r line; do
             spec=$(echo "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/[[:space:]]+[Aa][Ss][[:space:]]+.*$//' | awk '{print $1}')
@@ -468,7 +485,9 @@ jobs:
               fi
             done
 
-            sed -i "s#${reftag}@${old}#${reftag}@${new}#g" "$cf"
+            # Literal (non-regex) replacement — registry hostnames contain dots.
+            OLD_REF="${reftag}@${old}" NEW_REF="${reftag}@${new}" \
+              perl -0pi -e 's/\Q$ENV{OLD_REF}\E/$ENV{NEW_REF}/g' "$cf"
             echo "drift: ${reftag} ${old} -> ${new}"
             changed=1
           done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
@@ -560,6 +579,13 @@ jobs:
       - uses: actions/checkout@v6
       - uses: imjasonh/setup-crane@v0.4
 
+      - name: Install yq
+        run: |
+          YQ_VERSION=4.44.6
+          curl -fsSL -o /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          chmod +x /usr/local/bin/yq
+
       - name: Assert each pinned base is an index covering declared platforms
         run: |
           set -euo pipefail
@@ -567,16 +593,21 @@ jobs:
           for cf in images/*/Containerfile; do
             dir=$(dirname "$cf")
             yaml="${dir}/image.yaml"
-            mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml" 2>/dev/null || echo "linux/amd64")
+            if [ -f "$yaml" ]; then
+              mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml")
+            else
+              WANT=(linux/amd64)
+            fi
+            [ "${#WANT[@]}" -gt 0 ] || { echo "FAIL: ${yaml}: no platforms"; rc=1; continue; }
             while IFS= read -r line; do
               spec=$(echo "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/[[:space:]]+[Aa][Ss][[:space:]]+.*$//' | awk '{print $1}')
               case "$spec" in *"@sha256:"*) ;; *) continue ;; esac
-              have=$(crane manifest "$spec" | jq -r '[.manifests[]?.platform | "\(.os)/\(.architecture)"] | join(" ")')
+              # jq -e errors (non-zero) on a non-index or empty manifest list — fail-closed.
+              if ! have=$(crane manifest "$spec" | jq -er 'if (.manifests | type) == "array" and (.manifests | length) > 0 then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ") else error("not a non-empty image index") end' 2>/dev/null); then
+                echo "FAIL: ${cf}: ${spec} is not a multi-arch index"; rc=1; continue
+              fi
               for p in "${WANT[@]}"; do
-                if ! grep -qw "$p" <<< "$have"; then
-                  echo "FAIL: ${cf}: ${spec} is not an index covering ${p} (has: ${have:-none})"
-                  rc=1
-                fi
+                grep -qw "$p" <<< "$have" || { echo "FAIL: ${cf}: ${spec} missing ${p} (has: ${have})"; rc=1; }
               done
               echo "OK: ${cf}: ${spec} covers ${WANT[*]}"
             done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
@@ -620,6 +651,9 @@ APPLY=0
 
 TOKEN="${GHCR_TOKEN:-$(gh auth token 2>/dev/null || true)}"
 [ -n "$TOKEN" ] || { echo "ERROR: no token (set GHCR_TOKEN or run 'gh auth login')" >&2; exit 1; }
+export GH_TOKEN="$TOKEN"   # gh api and skopeo use the SAME credential
+GHCR_USER="${GHCR_USER:-$(gh api user --jq .login 2>/dev/null || true)}"
+[ -n "$GHCR_USER" ] || { echo "ERROR: cannot resolve GHCR username (set GHCR_USER)" >&2; exit 1; }
 
 # Build the allowlist: image dirs + stripped aliases.
 declare -A ALLOW=()
@@ -647,11 +681,15 @@ for pkg in "${!ALLOW[@]}"; do
 
   while IFS= read -r tagged; do
     [ -z "$tagged" ] && continue
-    raw=$(skopeo inspect --raw --creds "x:${TOKEN}" "docker://ghcr.io/${ORG}/${pkg}@${tagged}" 2>/dev/null || true)
-    if [ -z "$raw" ]; then echo "  WARN ${pkg}: cannot resolve ${tagged} — keeping all (fail-closed)"; resolve_ok=0; break; fi
+    raw=$(skopeo inspect --raw --creds "${GHCR_USER}:${TOKEN}" "docker://ghcr.io/${ORG}/${pkg}@${tagged}" 2>/dev/null || true)
+    # Fail-closed on BOTH unreachable AND unparseable manifests (jq -e validates JSON).
+    if [ -z "$raw" ] || ! jq -e . >/dev/null 2>&1 <<< "$raw"; then
+      echo "  WARN ${pkg}: cannot resolve/parse ${tagged} — keeping all (fail-closed)"; resolve_ok=0; break
+    fi
+    # raw is valid JSON here, so .manifests type check cannot error.
     while IFS= read -r child; do
       [ -n "$child" ] && KEEP["$child"]=1
-    done < <(echo "$raw" | jq -r '.manifests[]?.digest // empty')
+    done < <(jq -r 'if (.manifests | type) == "array" then .manifests[].digest else empty end' <<< "$raw")
   done < <(echo "$versions" | jq -r '.[] | select((.metadata.container.tags // []) | length > 0) | .name')
 
   if [ "$resolve_ok" -ne 1 ]; then unset KEEP; continue; fi
