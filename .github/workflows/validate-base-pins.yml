@@ -1,0 +1,50 @@
+name: Validate Base Pins
+
+on:
+  pull_request:
+    paths: ['images/**', '.github/workflows/validate-base-pins.yml']
+  push:
+    branches: [main]
+    paths: ['images/**']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: imjasonh/setup-crane@v0.4
+
+      - name: Install yq
+        run: |
+          YQ_VERSION=4.44.6
+          curl -fsSL -o /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          chmod +x /usr/local/bin/yq
+
+      - name: Assert each pinned base is an index covering declared platforms
+        run: |
+          set -euo pipefail
+          rc=0
+          for cf in images/*/Containerfile; do
+            dir=$(dirname "$cf")
+            yaml="${dir}/image.yaml"
+            if [ ! -f "$yaml" ]; then echo "FAIL: ${dir}: missing image.yaml"; rc=1; continue; fi
+            mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml")
+            [ "${#WANT[@]}" -gt 0 ] || { echo "FAIL: ${yaml}: no platforms"; rc=1; continue; }
+            while IFS= read -r line; do
+              spec=$(echo "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/--platform=[^[:space:]]+[[:space:]]+//; s/[[:space:]]+[Aa][Ss][[:space:]]+.*$//' | awk '{print $1}')
+              case "$spec" in *"@sha256:"*) ;; *) continue ;; esac
+              # jq -e errors (non-zero) on a non-index or empty manifest list — fail-closed.
+              if ! have=$(crane manifest "$spec" | jq -er 'if (.manifests | type) == "array" and (.manifests | length) > 0 then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ") else error("not a non-empty image index") end' 2>/dev/null); then
+                echo "FAIL: ${cf}: ${spec} is not a multi-arch index"; rc=1; continue
+              fi
+              for p in "${WANT[@]}"; do
+                grep -qw "$p" <<< "$have" || { echo "FAIL: ${cf}: ${spec} missing ${p} (has: ${have})"; rc=1; }
+              done
+              echo "OK: ${cf}: ${spec} covers ${WANT[*]}"
+            done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
+          done
+          exit "$rc"
