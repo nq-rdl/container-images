@@ -37,8 +37,10 @@ jobs:
             while IFS= read -r line; do
               spec=$(echo "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/--platform=[^[:space:]]+[[:space:]]+//; s/[[:space:]]+[Aa][Ss][[:space:]]+.*$//' | awk '{print $1}')
               case "$spec" in *"@sha256:"*) ;; *) continue ;; esac
+              # crane/skopeo reject repo:tag@digest refs; fetch by repo@digest (digest is content-addressed).
+              repo="${spec%@*}"; ref="${repo%:*}@${spec##*@}"
               # jq -e errors (non-zero) on a non-index or empty manifest list — fail-closed.
-              if ! have=$(crane manifest "$spec" | jq -er 'if (.manifests | type) == "array" and (.manifests | length) > 0 then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ") else error("not a non-empty image index") end' 2>/dev/null); then
+              if ! have=$(crane manifest "$ref" | jq -er 'if (.manifests | type) == "array" and (.manifests | length) > 0 then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ") else error("not a non-empty image index") end' 2>/dev/null); then
                 echo "FAIL: ${cf}: ${spec} is not a multi-arch index"; rc=1; continue
               fi
               for p in "${WANT[@]}"; do

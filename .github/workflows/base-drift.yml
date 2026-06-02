@@ -67,7 +67,8 @@ jobs:
             [ "$new" = "$old" ] && continue
 
             # Validate the new digest is an index covering every wanted platform (fail-closed).
-            have=$(crane manifest "${reftag}@${new}" | jq -r '[.manifests[]?.platform | "\(.os)/\(.architecture)"] | join(" ")')
+            # crane/skopeo reject repo:tag@digest refs; fetch by repo@digest (digest is content-addressed).
+            have=$(crane manifest "${reftag%:*}@${new}" | jq -r '[.manifests[]?.platform | "\(.os)/\(.architecture)"] | join(" ")')
             for p in "${WANT[@]}"; do
               if ! grep -qw "$p" <<< "$have"; then
                 echo "::error::${reftag}@${new} missing platform ${p}; skipping ${IMAGE}"
