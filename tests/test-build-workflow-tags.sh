@@ -102,6 +102,25 @@ else
   pass "convenience alias step uses docker buildx imagetools create"
 fi
 
+# Test: no schedule/cron trigger (daily rebuild orphaned a new digest every day — see #36)
+if grep -qE '^[[:space:]]*schedule:' "$WORKFLOW" || grep -qE '^[[:space:]]*-[[:space:]]*cron:' "$WORKFLOW"; then
+  fail "build workflow still has a schedule/cron trigger (daily rebuild generates orphaned manifests)"
+else
+  pass "no schedule/cron trigger (rebuilds are commit/dispatch-driven)"
+fi
+
+# Test: commit/dispatch triggers remain
+if grep -qE '^[[:space:]]*pull_request:' "$WORKFLOW"; then
+  pass "pull_request trigger present"
+else
+  fail "missing pull_request trigger"
+fi
+if grep -qE '^[[:space:]]*workflow_dispatch:' "$WORKFLOW"; then
+  pass "workflow_dispatch trigger present"
+else
+  fail "missing workflow_dispatch trigger"
+fi
+
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "${FAILURES} test(s) failed"

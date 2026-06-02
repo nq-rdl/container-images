@@ -6,8 +6,6 @@ on:
     paths: ['images/**', '.github/workflows/build.yml']
   pull_request:
     paths: ['images/**', '.github/workflows/build.yml']
-  schedule:
-    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       image:
@@ -48,8 +46,7 @@ jobs:
           set -euo pipefail
 
           # Collect image directories to consider
-          if [[ "${EVENT_NAME}" == "schedule" ]] \
-             || [[ "${INPUT_IMAGE}" == "all" ]]; then
+          if [[ "${INPUT_IMAGE}" == "all" ]]; then
             DIRS=$(find images -mindepth 1 -maxdepth 1 -type d \
                      -exec test -f '{}/Containerfile' \; -printf '%f\n' | sort)
           elif [[ -n "${INPUT_IMAGE}" ]]; then
