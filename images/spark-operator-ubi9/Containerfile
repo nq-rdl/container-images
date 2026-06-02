@@ -6,14 +6,12 @@
 #          apt-get → microdnf, source downloaded as tarball
 #
 
-ARG UBI_VERSION=9.5
 ARG SPARK_OPERATOR_VERSION=v2.1.0
-ARG GO_VERSION=1.24
 ARG TINI_VERSION=v0.19.0
 
 # --- Builder stage ---
 # hadolint ignore=DL3026
-FROM golang:${GO_VERSION} AS builder
+FROM golang:1.24@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804 AS builder
 
 ARG SPARK_OPERATOR_VERSION
 ARG TARGETARCH
@@ -34,7 +32,7 @@ RUN set -eux; \
     -o /usr/local/bin/spark-operator cmd/operator/main.go
 
 # --- Runtime stage ---
-FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:a50731d3397a4ee28583f1699842183d4d24fadcc565c4688487af9ee4e13a44
 
 ARG SPARK_OPERATOR_VERSION
 ARG TINI_VERSION

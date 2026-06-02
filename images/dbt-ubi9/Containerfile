@@ -6,10 +6,8 @@
 #          packages into a UBI-micro rootfs, venv-based install
 #
 
-ARG UBI_VERSION=9.5
-
 # --- Build: compile dbt and native extensions ---
-FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION} AS builder
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:a50731d3397a4ee28583f1699842183d4d24fadcc565c4688487af9ee4e13a44 AS builder
 
 ARG DBT_VERSION=1.11.11
 ARG DBT_ADAPTER=dbt-postgres
@@ -32,9 +30,8 @@ RUN python${PYTHON_VERSION} -m venv /opt/dbt \
         ${DBT_ADAPTER:+"${DBT_ADAPTER}"}
 
 # --- Runtime package rootfs ---
-FROM registry.access.redhat.com/ubi9/ubi:${UBI_VERSION} AS runtime-rootfs
+FROM registry.access.redhat.com/ubi9/ubi:9.5@sha256:d07a5e080b8a9b3624d3c9cfbfada9a6baacd8e6d4065118f0e80c71ad518044 AS runtime-rootfs
 
-ARG UBI_VERSION=9.5
 ARG PYTHON_VERSION=3.11
 
 RUN mkdir -p /mnt/rootfs \
@@ -50,7 +47,7 @@ RUN mkdir -p /mnt/rootfs \
     && echo 'dbt:x:1001:0:dbt user:/home/dbt:/sbin/nologin' >> /mnt/rootfs/etc/passwd
 
 # --- Runtime ---
-FROM registry.access.redhat.com/ubi9/ubi-micro:${UBI_VERSION}
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.5@sha256:839f16991579b023d4452eadd0efa925e438f8b73063afe4f75bdc6cf7a09b12
 
 ARG DBT_VERSION=1.11.11
 ARG PYTHON_VERSION=3.11

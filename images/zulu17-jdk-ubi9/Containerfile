@@ -6,8 +6,7 @@
 #          versionlock -> explicit package version, non-root user added
 #
 
-ARG UBI_VERSION=9.5
-FROM registry.access.redhat.com/ubi9/ubi-minimal:${UBI_VERSION}
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:a50731d3397a4ee28583f1699842183d4d24fadcc565c4688487af9ee4e13a44
 
 ARG ZULU_REPO_VER=1.0.0-1
 ARG ZULU_REPO_SHA256=2724b8be277ec16196b8e9357ed5e506eb791f88f966965a4f4a8bd5c4acdcfe
