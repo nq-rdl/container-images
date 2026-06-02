@@ -71,14 +71,27 @@ UBI major version and is suitable for local development only.
 
 ### Production usage
 
-Pin by `@sha256:…` digest in production manifests. Tags are mutable — a UBI
-security rebuild updates the image behind the same tag.
+Pin by `@sha256:…` digest in production manifests. Tags are mutable — merging a
+base-digest bump (or any image change) rebuilds and moves the tag to the new
+digest. Rebuilds are commit-driven, not a daily cron.
+
+### Rollback
+
+Tags are digest-pinned in git, so rollback is a git revert:
+
+1. `git revert <digest-bump-commit>` (or restore the previous `@sha256:` in the
+   image's `Containerfile`) and merge.
+2. The merge to `main` rebuilds and re-points the tag to the previous digest.
+   For an immediate fix, `workflow_dispatch` **Build Images** with the specific
+   `image` from the last known-good commit.
 
 ## Containerfile conventions
 
 - Use `Containerfile`, not `Dockerfile`
 - Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`
-- Pin base image and runtime versions via `ARG`
+- Pin the base image by digest (`registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:…`);
+  the `base-drift.yml` workflow opens a PR to bump the digest when the upstream tag moves.
+  Pin runtime versions via `ARG`.
 - Include OCI labels: `org.opencontainers.image.title`, `.description`, `.source`, `.vendor`, `.licenses`
 - Set `org.opencontainers.image.vendor` to `"Research Data Laboratory"` — this value must be consistent across all images
 - Consider using a non-root `USER` where the application supports it
