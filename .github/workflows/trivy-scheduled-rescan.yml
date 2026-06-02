@@ -39,13 +39,11 @@ jobs:
             else
               TAGS=$(yq -r '((.tags // []) + ["latest"]) | unique | .[]' "$yaml")
             fi
-            # Also scan the stripped convenience alias (e.g. python-ubi9 -> python).
-            alias_name=""
-            if [[ "$name" =~ ^(.+)-ubi[0-9]+$ ]]; then alias_name="${BASH_REMATCH[1]}"; fi
+            # Canonical -ubiN tags only; stripped aliases share the same index digest,
+            # so scanning them would be redundant (identical content, duplicate SARIF).
             while IFS= read -r tag; do
               [ -z "$tag" ] && continue
               MATRIX=$(echo "$MATRIX" | jq --arg i "$name" --arg t "$tag" '. + [{"image":$i,"tag":$t}]')
-              [ -n "$alias_name" ] && MATRIX=$(echo "$MATRIX" | jq --arg i "$alias_name" --arg t "$tag" '. + [{"image":$i,"tag":$t}]')
             done <<< "$TAGS"
           done < <(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -print)
           echo "matrix=$(echo "$MATRIX" | jq -c '.')" >> "$GITHUB_OUTPUT"
