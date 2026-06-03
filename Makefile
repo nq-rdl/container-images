@@ -1,4 +1,8 @@
 SHELL := /bin/bash
+# Strict shell so a failed download or `curl | bash` installer aborts the recipe
+# instead of silently reporting success: -e (any command), -u (unset var),
+# -o pipefail (any stage of a pipe). -c must remain last (Make appends the recipe).
+.SHELLFLAGS := -eu -o pipefail -c
 
 .PHONY: install-deps
 
@@ -67,6 +71,6 @@ install-deps:
 	else \
 		echo "k3d: not found — installing ..."; \
 		TAG=v5.8.3; \
-		curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/v5.8.3/install.sh | TAG="$$TAG" bash; \
+		curl -fsSL "https://raw.githubusercontent.com/k3d-io/k3d/$${TAG}/install.sh" | TAG="$$TAG" bash; \
 	fi
 	@echo "── all dependencies installed ──"
