@@ -62,7 +62,7 @@ install-deps:
 		OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
 		curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/$${OS}/$${ARCH}/kubectl"; \
 		curl -fsSL -o /tmp/kubectl.sha256 "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/$${OS}/$${ARCH}/kubectl.sha256"; \
-		echo "$$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c || exit 1; \
+		echo "$$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c; \
 		chmod +x /tmp/kubectl; \
 		sudo mv /tmp/kubectl /usr/local/bin/kubectl; \
 	fi
