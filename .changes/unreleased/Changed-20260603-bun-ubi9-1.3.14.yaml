@@ -1,0 +1,3 @@
+kind: Changed
+body: 'Updates `bun-ubi9` to Bun 1.3.14 — parses text `bun.lock` (`lockfileVersion: 1`) that 1.1.42 could not (#39)'
+time: 2026-06-03T22:08:14.761950917+10:00

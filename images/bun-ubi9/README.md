@@ -10,8 +10,8 @@ podman pull ghcr.io/nq-rdl/bun-ubi9:latest
 
 ## Supported tags
 
-- `1.1.42` — specific Bun version, latest UBI9 patch
-- `1.1` — latest patch of Bun 1.1.x
+- `1.3.14` — specific Bun version, latest UBI9 patch
+- `1.3` — latest patch of Bun 1.3.x
 - `latest` — latest Bun version, latest UBI9 patch
 
 Pin by `@sha256:…` digest in production manifests.
@@ -21,7 +21,7 @@ Pin by `@sha256:…` digest in production manifests.
 | Field | Value |
 |-------|-------|
 | Base | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
-| Runtime | Bun 1.1.42 |
+| Runtime | Bun 1.3.14 |
 | Platforms | linux/amd64, linux/arm64 |
 | User | 1001 (non-root) |
 

@@ -2,7 +2,7 @@
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:a50731d3397a4ee28583f1699842183d4d24fadcc565c4688487af9ee4e13a44
 
-ARG BUN_VERSION=1.1.42
+ARG BUN_VERSION=1.3.14
 ARG TARGETARCH
 
 LABEL org.opencontainers.image.title="bun-ubi9"
