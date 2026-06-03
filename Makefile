@@ -1,4 +1,8 @@
 SHELL := /bin/bash
+# Strict shell so a failed download or `curl | bash` installer aborts the recipe
+# instead of silently reporting success: -e (any command), -u (unset var),
+# -o pipefail (any stage of a pipe). -c must remain last (Make appends the recipe).
+.SHELLFLAGS := -eu -o pipefail -c
 
 .PHONY: install-deps
 
