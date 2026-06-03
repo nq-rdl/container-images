@@ -36,3 +36,6 @@ jobs:
 
       - name: Validate build workflow tag compliance
         run: bash tests/test-build-workflow-tags.sh
+
+      - name: Validate base images are digest-pinned
+        run: bash tests/test-base-images-pinned.sh

@@ -14,25 +14,48 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     outputs:
-      images: ${{ steps.set-matrix.outputs.images }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install yq
+        run: |
+          YQ_VERSION=4.44.6
+          curl -fsSL -o /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          chmod +x /usr/local/bin/yq
 
       - id: set-matrix
         run: |
           set -euo pipefail
-          IMAGES=$(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -printf '%f\n' \
-                   | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+          MATRIX="[]"
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            name=$(basename "$dir")
+            yaml="${dir}/image.yaml"
+            [ -f "$yaml" ] || continue
+            if yq -e '.build_matrix' "$yaml" >/dev/null 2>&1; then
+              TAGS=$(yq -r '[.build_matrix.versions[].tags[]] | unique | .[]' "$yaml")
+            else
+              TAGS=$(yq -r '((.tags // []) + ["latest"]) | unique | .[]' "$yaml")
+            fi
+            # Canonical -ubiN tags only; stripped aliases share the same index digest,
+            # so scanning them would be redundant (identical content, duplicate SARIF).
+            while IFS= read -r tag; do
+              [ -z "$tag" ] && continue
+              MATRIX=$(echo "$MATRIX" | jq --arg i "$name" --arg t "$tag" '. + [{"image":$i,"tag":$t}]')
+            done <<< "$TAGS"
+          done < <(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -print)
+          echo "matrix=$(echo "$MATRIX" | jq -c '.')" >> "$GITHUB_OUTPUT"
 
   rescan:
     needs: discover
-    if: needs.discover.outputs.images != '[]'
+    if: needs.discover.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.discover.outputs.images) }}
+        include: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -45,13 +68,14 @@ jobs:
       - name: Scan published image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           format: sarif
-          output: trivy-rescan-${{ matrix.image }}.sarif
+          output: trivy-rescan-${{ matrix.image }}-${{ matrix.tag }}.sarif
           severity: CRITICAL,HIGH
           exit-code: '0'
 
-      - uses: github/codeql-action/upload-sarif@v4
+      - if: always()
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: trivy-rescan-${{ matrix.image }}.sarif
-          category: trivy-rescan-${{ matrix.image }}
+          sarif_file: trivy-rescan-${{ matrix.image }}-${{ matrix.tag }}.sarif
+          category: trivy-rescan-${{ matrix.image }}-${{ matrix.tag }}

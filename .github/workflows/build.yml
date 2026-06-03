@@ -6,8 +6,6 @@ on:
     paths: ['images/**', '.github/workflows/build.yml']
   pull_request:
     paths: ['images/**', '.github/workflows/build.yml']
-  schedule:
-    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       image:
@@ -48,8 +46,7 @@ jobs:
           set -euo pipefail
 
           # Collect image directories to consider
-          if [[ "${EVENT_NAME}" == "schedule" ]] \
-             || [[ "${INPUT_IMAGE}" == "all" ]]; then
+          if [[ "${INPUT_IMAGE}" == "all" ]]; then
             DIRS=$(find images -mindepth 1 -maxdepth 1 -type d \
                      -exec test -f '{}/Containerfile' \; -printf '%f\n' | sort)
           elif [[ -n "${INPUT_IMAGE}" ]]; then
@@ -247,7 +244,7 @@ jobs:
 
   publish-aliases:
     if: github.event_name != 'pull_request'
-    needs: [build]
+    needs: [discover, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -270,10 +267,13 @@ jobs:
       - name: Publish convenience aliases
         env:
           OWNER: ${{ github.repository_owner }}
+          MATRIX: ${{ needs.discover.outputs.matrix }}
         run: |
           set -euo pipefail
-          for image_dir in images/*/; do
-            image_name=$(basename "$image_dir")
+          mapfile -t BUILT < <(echo "$MATRIX" | jq -r '[.[].image] | unique | .[]')
+          for image_name in "${BUILT[@]}"; do
+            image_dir="images/${image_name}/"
+            [ -d "$image_dir" ] || continue
 
             if [[ ! "$image_name" =~ ^(.+)-ubi([0-9]+)$ ]]; then
               echo "Skipping ${image_name} — no UBI suffix to strip"

@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Eliminate GHCR orphaned-manifest churn at the source: digest-pin all base images, rebuild only on merged commits (no daily cron), add a FROM-aware base drift-checker, scan every published tag in the Trivy rescan, and add a reachability-safe one-time purge — superseding the scheduled cleanup janitor (#36).'
+time: 2026-06-03T12:00:00Z

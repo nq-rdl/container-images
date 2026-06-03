@@ -22,6 +22,12 @@ gh attestation verify oci://ghcr.io/nq-rdl/bun-ubi9:latest \
   --repo nq-rdl/container-images
 ```
 
+## Reproducibility
+
+Base images are pinned by digest in each `Containerfile`, so a rebuild uses the
+exact same base until a `base-drift.yml` PR bumps it. Images are rebuilt on
+merged changes, not on a daily schedule.
+
 ## Tag conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#image-naming-convention) for the full

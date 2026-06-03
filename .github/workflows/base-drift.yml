@@ -1,0 +1,108 @@
+name: Base Image Drift Check
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.set.outputs.images }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: set
+        run: |
+          set -euo pipefail
+          IMAGES=$(find images -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/Containerfile' \; -printf '%f\n' \
+                   | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+
+  drift:
+    needs: discover
+    if: needs.discover.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.discover.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: imjasonh/setup-crane@v0.4
+
+      - name: Install yq
+        run: |
+          YQ_VERSION=4.44.6
+          curl -fsSL -o /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          chmod +x /usr/local/bin/yq
+
+      - name: Resolve drift and validate new index
+        id: drift
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          cf="images/${IMAGE}/Containerfile"
+          yaml="images/${IMAGE}/image.yaml"
+          changed=0
+
+          # Platforms this image must support (default linux/amd64). No silent fallback:
+          # a missing yq or empty platform list is a hard error, not amd64-only.
+          [ -f "$yaml" ] || { echo "::error::${yaml} not found; cannot determine platforms"; exit 1; }
+          mapfile -t WANT < <(yq -r '(.platforms // ["linux/amd64"])[]' "$yaml")
+          [ "${#WANT[@]}" -gt 0 ] || { echo "::error::${yaml} declares no platforms"; exit 1; }
+
+          while IFS= read -r line; do
+            spec=$(echo "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/--platform=[^[:space:]]+[[:space:]]+//; s/[[:space:]]+[Aa][Ss][[:space:]]+.*$//' | awk '{print $1}')
+            case "$spec" in *"@sha256:"*) ;; *) continue ;; esac
+            reftag="${spec%@*}"
+            old="${spec#*@}"
+            new=$(crane digest "$reftag")
+            [ "$new" = "$old" ] && continue
+
+            # Validate the new digest is an index covering every wanted platform (fail-closed).
+            # crane/skopeo reject repo:tag@digest refs; fetch by repo@digest (digest is content-addressed).
+            have=$(crane manifest "${reftag%:*}@${new}" | jq -r '[.manifests[]?.platform | "\(.os)/\(.architecture)"] | join(" ")')
+            for p in "${WANT[@]}"; do
+              if ! grep -qw "$p" <<< "$have"; then
+                echo "::error::${reftag}@${new} missing platform ${p}; skipping ${IMAGE}"
+                exit 0
+              fi
+            done
+
+            # Literal (non-regex) replacement — registry hostnames contain dots.
+            OLD_REF="${reftag}@${old}" NEW_REF="${reftag}@${new}" \
+              perl -0pi -e 's/\Q$ENV{OLD_REF}\E/$ENV{NEW_REF}/g' "$cf"
+            echo "drift: ${reftag} ${old} -> ${new}"
+            changed=1
+          done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
+
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update bump PR
+        if: steps.drift.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          branch="base-drift/${IMAGE}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "images/${IMAGE}/Containerfile"
+          git commit -m "image(${IMAGE}): bump base image digest"
+          git push -f origin "$branch"
+          if [ -z "$(gh pr list --head "$branch" --state open --json number -q '.[0].number')" ]; then
+            gh pr create --head "$branch" --base main \
+              --title "image(${IMAGE}): bump base image digest" \
+              --body "Automated base-image digest update for \`${IMAGE}\` (validated as a multi-arch index covering its declared platforms). Merging triggers a rebuild+push of the new digest."
+          else
+            echo "PR already open for ${branch}; force-push updated it."
+          fi
