@@ -1,0 +1,29 @@
+name: starrocks-cn-ubi9
+description: StarRocks CN (Compute Node) on UBI9
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi
+  version: "9.8"
+runtime:
+  name: starrocks-cn
+tags:
+  - "4.1"
+  - "4.1.1"
+  - "3.3"
+  - "3.3.22"
+  - "latest"
+build_matrix:
+  arg: STARROCKS_VERSION
+  versions:
+    - version: "4.1.1"
+      tags: ["4.1", "4.1.1", "latest"]
+    - version: "3.3.22"
+      tags: ["3.3", "3.3.22"]
+support:
+  status: stable
+  eol: "2027-06-30"
