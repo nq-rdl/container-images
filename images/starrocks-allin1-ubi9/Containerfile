@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.7
+#
+# StarRocks allin1 (single-node demo) on UBI9
+# Blueprint: StarRocks/starrocks docker/dockerfiles/allin1/allin1-ubi.Dockerfile (ref 4.1.1)
+# Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (index-digest pinned); yum -> dnf + cache
+#          cleanup; MySQL release RPM el8 -> el9; pip supervisor version-pinned;
+#          dual digest-pinned artifact stages selected by ARG STARROCKS_VERSION.
+#
+ARG STARROCKS_VERSION=4.1.1
+
+# hadolint ignore=DL3026
+FROM docker.io/starrocks/artifacts-centos7:4.1.1@sha256:5b8e1dc0bc38544c2c618492e686b7f8903a7f8bbe09afdeaff7f2a78a46e66a AS artifacts-4.1.1
+# hadolint ignore=DL3026
+FROM docker.io/starrocks/artifacts-centos7:3.3.22@sha256:ccdf388ffe57a6dab771b95fb296ecf1df2bb4249e8961f05909cadaee61d3e3 AS artifacts-3.3.22
+
+# hadolint ignore=DL3006,DL3026
+FROM artifacts-${STARROCKS_VERSION} AS artifacts
+RUN rm -f /release/be_artifacts/be/lib/starrocks_be.debuginfo
+
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
+
+ARG STARROCKS_VERSION
+ARG DEPLOYDIR=/data/deploy
+ENV SR_HOME=${DEPLOYDIR}/starrocks
+
+LABEL org.opencontainers.image.title="starrocks-allin1-ubi9"
+LABEL org.opencontainers.image.description="StarRocks allin1 (single-node demo) ${STARROCKS_VERSION} on UBI9"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+# hadolint ignore=DL3041,DL3013
+RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
+        java-11-openjdk-devel \
+        tzdata openssl curl vim-minimal ca-certificates fontconfig \
+        gzip tar less hostname procps-ng lsof nmap-ncat \
+        python3-pip nginx \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
+    && dnf install -y --nodocs --nogpgcheck mysql-community-client \
+    && dnf remove -y mysql80-community-release \
+    && dnf upgrade -y \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf /var/cache/yum \
+    && pip3 install --no-cache-dir supervisor==4.2.5
+
+ENV JAVA_HOME=/usr/lib/jvm/java-11
+
+WORKDIR ${DEPLOYDIR}
+
+# Copy BE then FE artifacts into the shared SR_HOME (matches upstream allin1 layout).
+COPY --from=artifacts /release/be_artifacts/ ${DEPLOYDIR}/starrocks
+COPY --from=artifacts /release/fe_artifacts/ ${DEPLOYDIR}/starrocks
+
+# Vendored setup scripts, configs, and the supervisor/feproxy/director service tree.
+COPY *.sh *.conf *.txt ${DEPLOYDIR}/
+COPY services/ ${SR_HOME}/
+
+RUN cat be.conf >> ${DEPLOYDIR}/starrocks/be/conf/be.conf \
+    && cat fe.conf >> ${DEPLOYDIR}/starrocks/fe/conf/fe.conf \
+    && rm -f be.conf fe.conf \
+    && mkdir -p ${DEPLOYDIR}/starrocks/fe/meta ${DEPLOYDIR}/starrocks/be/storage \
+    && touch /.dockerenv
+
+CMD ["./entrypoint.sh"]
