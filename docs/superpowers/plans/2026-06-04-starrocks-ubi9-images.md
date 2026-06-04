@@ -48,7 +48,7 @@ Pinned references (verified 2026-06-04, all amd64-covering indexes):
 
 | Reference | Index digest |
 |-----------|--------------|
-| `registry.access.redhat.com/ubi9/ubi:9.8` | `sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08` |
+| `registry.access.redhat.com/ubi9/ubi:9.8` | `sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee` |
 | `starrocks/artifacts-centos7:4.1.1` | `sha256:5b8e1dc0bc38544c2c618492e686b7f8903a7f8bbe09afdeaff7f2a78a46e66a` |
 | `starrocks/artifacts-centos7:3.3.22` | `sha256:ccdf388ffe57a6dab771b95fb296ecf1df2bb4249e8961f05909cadaee61d3e3` |
 
@@ -69,7 +69,7 @@ Expected: confirm the `shellcheck` hook's `files:`/`exclude:` scope. The pixi `l
 
 Run:
 ```bash
-podman run --rm registry.access.redhat.com/ubi9/ubi:9.8@sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08 \
+podman run --rm registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee \
   bash -c 'dnf install -y --nodocs java-11-openjdk-devel >/dev/null 2>&1; \
            echo "java bin: $(readlink -f /usr/bin/java)"; \
            ls -d /usr/lib/jvm/java-11* /usr/lib/jvm/java-11 2>/dev/null; \
@@ -99,7 +99,7 @@ Expected: confirms `/release/fe_artifacts/fe/{bin/start_fe.sh,lib/starrocks-fe.j
 
 - [ ] **Step 5: Record resolved values inline**
 
-No commit. Carry forward: `JAVA_HOME=<resolved>`, `MYSQL_EL9_RPM=<resolved url>`, artifact paths confirmed. The Containerfiles below use `JAVA_HOME=/usr/lib/jvm/java-11` and `mysql80-community-release-el9-1.noarch.rpm` as defaults — **substitute the resolved values** if Steps 2–3 differ.
+No commit. Carry forward: `JAVA_HOME=<resolved>`, `MYSQL_EL9_RPM=<resolved url>`, artifact paths confirmed. The Containerfiles below use `JAVA_HOME=/usr/lib/jvm/java-11` and `mysql80-community-release-el9-5.noarch.rpm` as defaults — **substitute the resolved values** if Steps 2–3 differ.
 
 ---
 
@@ -142,7 +142,7 @@ FROM starrocks/artifacts-centos7:3.3.22@sha256:ccdf388ffe57a6dab771b95fb296ecf1d
 ARG STARROCKS_VERSION=4.1.1
 FROM artifacts-${STARROCKS_VERSION} AS artifacts
 
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
 
 ARG STARROCKS_VERSION
 ARG STARROCKS_ROOT=/opt/starrocks
@@ -160,7 +160,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
         java-11-openjdk-devel \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof nmap-ncat \
-    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-1.noarch.rpm \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
     && dnf install -y --nodocs --nogpgcheck mysql-community-client \
     && dnf remove -y mysql80-community-release \
     && dnf upgrade -y \
@@ -355,7 +355,7 @@ FROM artifacts-${STARROCKS_VERSION} AS artifacts
 # Drop the BE debug-info to keep the runtime image lean (matches upstream be-ubi).
 RUN rm -f /release/be_artifacts/be/lib/starrocks_be.debuginfo
 
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
 
 ARG STARROCKS_VERSION
 ARG STARROCKS_ROOT=/opt/starrocks
@@ -373,7 +373,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
         java-11-openjdk-devel \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof \
-    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-1.noarch.rpm \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
     && dnf install -y --nodocs --nogpgcheck mysql-community-client \
     && dnf remove -y mysql80-community-release \
     && dnf upgrade -y \
@@ -578,7 +578,7 @@ ARG STARROCKS_VERSION=4.1.1
 FROM artifacts-${STARROCKS_VERSION} AS artifacts
 RUN rm -f /release/be_artifacts/be/lib/starrocks_be.debuginfo
 
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
 
 ARG STARROCKS_VERSION
 ARG STARROCKS_ROOT=/opt/starrocks
@@ -596,7 +596,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
         java-11-openjdk-devel \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof \
-    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-1.noarch.rpm \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
     && dnf install -y --nodocs --nogpgcheck mysql-community-client \
     && dnf remove -y mysql80-community-release \
     && dnf upgrade -y \
@@ -803,7 +803,7 @@ ARG STARROCKS_VERSION=4.1.1
 FROM artifacts-${STARROCKS_VERSION} AS artifacts
 RUN rm -f /release/be_artifacts/be/lib/starrocks_be.debuginfo
 
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
 
 ARG STARROCKS_VERSION
 ARG DEPLOYDIR=/data/deploy
@@ -821,7 +821,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof nmap-ncat \
         python3-pip nginx \
-    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-1.noarch.rpm \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
     && dnf install -y --nodocs --nogpgcheck mysql-community-client \
     && dnf remove -y mysql80-community-release \
     && dnf upgrade -y \
