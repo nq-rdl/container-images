@@ -5,8 +5,9 @@
 #            specialized for the compute-only CN role (upstream ships CN from the BE
 #            artifacts with cn_entrypoint.sh).
 # Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (index-digest pinned); yum -> dnf + cache
-#          cleanup; MySQL release RPM el8 -> el9; java-1.8.0 -> java-11; dual digest-
-#          pinned artifact stages selected by ARG STARROCKS_VERSION.
+#          cleanup; MySQL release RPM el8 -> el9; java-1.8.0 -> java-17 (StarRocks
+#          v3.5+ requires JDK 17 per deployment prerequisites); dual digest-pinned
+#          artifact stages selected by ARG STARROCKS_VERSION.
 #
 ARG STARROCKS_VERSION=4.1.1
 
@@ -34,7 +35,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # hadolint ignore=DL3041
 RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
-        java-11-openjdk-devel \
+        java-17-openjdk-devel \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof \
     && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
@@ -44,7 +45,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
     && dnf clean all \
     && rm -rf /var/cache/dnf /var/cache/yum
 
-ENV JAVA_HOME=/usr/lib/jvm/java-11
+ENV JAVA_HOME=/usr/lib/jvm/java-17
 
 RUN touch /.dockerenv
 
@@ -59,8 +60,11 @@ USER ${STARROCKS_USER}
 COPY --from=artifacts --chown=${STARROCKS_USER}:${STARROCKS_GROUP} /release/be_artifacts/ ${STARROCKS_ROOT}/
 COPY --chown=${STARROCKS_USER}:${STARROCKS_GROUP} *.sh ${STARROCKS_ROOT}/
 
-# CN runs compute-only; expose it under the conventional cn path.
-RUN ln -sfT be ${STARROCKS_ROOT}/cn
+# CN runs compute-only; create the default storage_root_path (CN home is
+# ${STARROCKS_ROOT}/cn -> be, so the cn.conf default ${STARROCKS_HOME}/storage
+# resolves to be/storage, which the BE/CN process expects to pre-exist) and expose
+# the binary under the conventional cn path.
+RUN mkdir -p ${STARROCKS_ROOT}/be/storage && ln -sfT be ${STARROCKS_ROOT}/cn
 
 # No server-starting default command — the Operator supplies it.
 # hadolint ignore=DL3002

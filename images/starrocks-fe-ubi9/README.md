@@ -28,7 +28,7 @@ Pin by `@sha256:...` digest in production manifests.
 | Field | Value |
 |-------|-------|
 | Base | `registry.access.redhat.com/ubi9/ubi:9.8` |
-| Runtime | StarRocks FE with OpenJDK 11 |
+| Runtime | StarRocks FE with OpenJDK 17 |
 | Platforms | linux/amd64 |
 | StarRocks Home | `/opt/starrocks` |
 | Default command | none — supplied by the Operator (`fe_entrypoint.sh` is bundled) |
