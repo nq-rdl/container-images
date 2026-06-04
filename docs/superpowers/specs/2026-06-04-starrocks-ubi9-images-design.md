@@ -152,7 +152,10 @@ support: { status: stable, eol: "2027-06-30" }   # one block per image (tracks t
 - `ubi8/ubi:8.7` → `ubi9/ubi:9.8` (index-digest pinned).
 - `yum` → `dnf` + `dnf clean all` cleanup. (`.hadolint.yaml` ignores DL3041/dnf
   but not DL3033/yum, so `dnf` avoids a lint failure and is UBI9-idiomatic.)
-- MySQL client release RPM `el8` → `el9`.
+- MySQL client release RPM `el8` → `el9`. Also **dropped upstream's `--nogpgcheck`**:
+  the `mysql80-community-release-el9-5` RPM configures the repo with `gpgcheck=1` and
+  ships `RPM-GPG-KEY-mysql-2023`, so `dnf install mysql-community-client` verifies the
+  package signature (the `--nogpgcheck` upstream carries is a stale el8-era workaround).
 - All four use `java-17-openjdk-devel` (FE `java-11` → `java-17`; BE/CN `java-1.8.0`
   → `java-17`; `JAVA_HOME=/usr/lib/jvm/java-17`). StarRocks' [deployment
   prerequisites](https://docs.starrocks.io/docs/deployment/deployment_prerequisites)

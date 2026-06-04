@@ -3,7 +3,8 @@
 # StarRocks allin1 (single-node demo) on UBI9
 # Blueprint: StarRocks/starrocks docker/dockerfiles/allin1/allin1-ubi.Dockerfile (ref 4.1.1)
 # Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (index-digest pinned); yum -> dnf + cache
-#          cleanup; MySQL release RPM el8 -> el9; java-11 -> java-17 (StarRocks
+#          cleanup; MySQL release RPM el8 -> el9 (GPG-verified client; el9-5 ships
+#          the signing key, so upstream's --nogpgcheck is dropped); java-11 -> java-17 (StarRocks
 #          v3.5+ requires JDK 17 per deployment prerequisites); pip supervisor
 #          version-pinned; dual digest-pinned artifact stages selected by ARG
 #          STARROCKS_VERSION.
@@ -38,7 +39,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
         gzip tar less hostname procps-ng lsof nmap-ncat \
         python3-pip nginx \
     && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
-    && dnf install -y --nodocs --nogpgcheck mysql-community-client \
+    && dnf install -y --nodocs mysql-community-client \
     && dnf remove -y mysql80-community-release \
     && dnf upgrade -y \
     && dnf clean all \
