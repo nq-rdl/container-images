@@ -1,0 +1,3 @@
+kind: Added
+body: 'StarRocks UBI9 images: starrocks-fe-ubi9, starrocks-be-ubi9 (also serves the Operator CN role), starrocks-cn-ubi9, and starrocks-allin1-ubi9 — StarRocks 4.1.1 (latest) and 3.3.22, repackaged from artifacts-centos7 onto ubi9/ubi:9.8 for StarRocks Operator deployments (#29)'
+time: 2026-06-04T14:46:00.479392+10:00

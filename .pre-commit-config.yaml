@@ -28,6 +28,9 @@ repos:
         entry: pixi run shellcheck
         language: system
         types: [shell]
+        # Vendored upstream scripts under images/ are not ours to restyle; this
+        # mirrors the lint-shell pixi task scope (scripts + tests only).
+        exclude: ^images/
 
       - id: actionlint
         name: actionlint
