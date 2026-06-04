@@ -3,8 +3,10 @@
 # StarRocks allin1 (single-node demo) on UBI9
 # Blueprint: StarRocks/starrocks docker/dockerfiles/allin1/allin1-ubi.Dockerfile (ref 4.1.1)
 # Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (index-digest pinned); yum -> dnf + cache
-#          cleanup; MySQL release RPM el8 -> el9; pip supervisor version-pinned;
-#          dual digest-pinned artifact stages selected by ARG STARROCKS_VERSION.
+#          cleanup; MySQL release RPM el8 -> el9; java-11 -> java-17 (StarRocks
+#          v3.5+ requires JDK 17 per deployment prerequisites); pip supervisor
+#          version-pinned; dual digest-pinned artifact stages selected by ARG
+#          STARROCKS_VERSION.
 #
 ARG STARROCKS_VERSION=4.1.1
 
@@ -31,7 +33,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # hadolint ignore=DL3041,DL3013
 RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
-        java-11-openjdk-devel \
+        java-17-openjdk-devel \
         tzdata openssl curl vim-minimal ca-certificates fontconfig \
         gzip tar less hostname procps-ng lsof nmap-ncat \
         python3-pip nginx \
@@ -43,7 +45,7 @@ RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
     && rm -rf /var/cache/dnf /var/cache/yum \
     && pip3 install --no-cache-dir supervisor==4.2.5
 
-ENV JAVA_HOME=/usr/lib/jvm/java-11
+ENV JAVA_HOME=/usr/lib/jvm/java-17
 
 WORKDIR ${DEPLOYDIR}
 

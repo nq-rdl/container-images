@@ -31,7 +31,7 @@ Pin by `@sha256:...` digest in production manifests.
 | Field | Value |
 |-------|-------|
 | Base | `registry.access.redhat.com/ubi9/ubi:9.8` |
-| Runtime | StarRocks FE+BE + OpenJDK 11, supervisor, nginx feproxy |
+| Runtime | StarRocks FE+BE + OpenJDK 17, supervisor, nginx feproxy |
 | Platforms | linux/amd64 |
 | Deploy dir | `/data/deploy/starrocks` |
 | Default command | `./entrypoint.sh` (starts the single-node cluster) |

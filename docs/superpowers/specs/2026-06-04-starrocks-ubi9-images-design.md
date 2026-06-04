@@ -103,7 +103,7 @@ digest-pinned artifact stages** and select between them with a **stage-ref FROM*
 # StarRocks <component> on UBI9
 # Blueprint: StarRocks/starrocks docker/dockerfiles/<component>/<component>-ubi.Dockerfile
 # Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (digest-pinned index); yum -> dnf + cache
-#          cleanup; mysql repo el8 -> el9; BE java-1.8.0 -> java-11; dual digest-
+#          cleanup; mysql repo el8 -> el9; java-1.8.0/java-11 -> java-17; dual digest-
 #          pinned artifact stages selected by ARG for the build_matrix.
 #
 FROM starrocks/artifacts-centos7:4.1.1@sha256:5b8e1d…  AS artifacts-4.1.1
@@ -153,10 +153,15 @@ support: { status: stable, eol: "2027-06-30" }   # one block per image (tracks t
 - `yum` → `dnf` + `dnf clean all` cleanup. (`.hadolint.yaml` ignores DL3041/dnf
   but not DL3033/yum, so `dnf` avoids a lint failure and is UBI9-idiomatic.)
 - MySQL client release RPM `el8` → `el9`.
-- All four use `java-11-openjdk-devel` (BE/CN change `java-1.8.0` → `java-11`; Java 8
-  is absent from UBI9 repos and current upstream BE uses JDK 11). `-devel` (not
-  `-headless`) matches the upstream Dockerfiles and provides the full JDK / `libjvm.so`
-  the BE JNI loads at runtime.
+- All four use `java-17-openjdk-devel` (FE `java-11` → `java-17`; BE/CN `java-1.8.0`
+  → `java-17`; `JAVA_HOME=/usr/lib/jvm/java-17`). StarRocks' [deployment
+  prerequisites](https://docs.starrocks.io/docs/deployment/deployment_prerequisites)
+  require **JDK 17 or later for v3.5+**, which covers the 4.1.1 line shipped as
+  `latest`; a single JDK 17 also satisfies the 3.3.22 line (`JDK 11 or later`). This
+  deliberately diverges from upstream's *4.1.1* `*-ubi` Dockerfiles (which still ship
+  JDK 11 for FE / JDK 8 for BE — those images lag the JDK-17 requirement, and JDK 8 is
+  absent from UBI9 repos anyway). `-devel` (not `-headless`) matches the upstream
+  Dockerfiles and provides the full JDK / `libjvm.so` the BE JNI loads at runtime.
 - allin1 `pip3 install supervisor` → version-pinned (avoids hadolint DL3013).
 - `dnf upgrade -y` during build to reduce fixable CRITICAL/HIGH Trivy findings.
 

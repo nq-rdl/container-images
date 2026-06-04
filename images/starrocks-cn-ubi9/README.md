@@ -29,7 +29,7 @@ Pin by `@sha256:...` digest in production manifests.
 | Field | Value |
 |-------|-------|
 | Base | `registry.access.redhat.com/ubi9/ubi:9.8` |
-| Runtime | StarRocks CN (BE binary, compute-only) + OpenJDK 11 |
+| Runtime | StarRocks CN (BE binary, compute-only) + OpenJDK 17 |
 | Platforms | linux/amd64 |
 | StarRocks Home | `/opt/starrocks` (`cn -> be`) |
 | Default command | none — supplied by the Operator |
