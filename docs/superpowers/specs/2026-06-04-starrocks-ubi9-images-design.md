@@ -82,7 +82,7 @@ separate `cn-ubuntu` repo for clarity in Operator manifests.
 
 | Reference | Index digest |
 |-----------|--------------|
-| `registry.access.redhat.com/ubi9/ubi:9.8` | `sha256:ef3ee85eaa34762a1ae317661efedd8a8dabd4fd84ad17676669920e4270aa08` |
+| `registry.access.redhat.com/ubi9/ubi:9.8` | `sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee` |
 | `starrocks/artifacts-centos7:4.1.1` | `sha256:5b8e1dc0bc38544c2c618492e686b7f8903a7f8bbe09afdeaff7f2a78a46e66a` |
 | `starrocks/artifacts-centos7:3.3.22` | `sha256:ccdf388ffe57a6dab771b95fb296ecf1df2bb4249e8961f05909cadaee61d3e3` |
 
