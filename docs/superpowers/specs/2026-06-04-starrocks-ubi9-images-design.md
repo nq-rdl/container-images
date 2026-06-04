@@ -153,8 +153,10 @@ support: { status: stable, eol: "2027-06-30" }   # one block per image (tracks t
 - `yum` → `dnf` + `dnf clean all` cleanup. (`.hadolint.yaml` ignores DL3041/dnf
   but not DL3033/yum, so `dnf` avoids a lint failure and is UBI9-idiomatic.)
 - MySQL client release RPM `el8` → `el9`.
-- BE/CN `java-1.8.0-openjdk` → `java-11-openjdk-headless` (Java 8 is absent from
-  UBI9 repos; current upstream BE uses JDK 11). FE/allin1 already use Java 11.
+- All four use `java-11-openjdk-devel` (BE/CN change `java-1.8.0` → `java-11`; Java 8
+  is absent from UBI9 repos and current upstream BE uses JDK 11). `-devel` (not
+  `-headless`) matches the upstream Dockerfiles and provides the full JDK / `libjvm.so`
+  the BE JNI loads at runtime.
 - allin1 `pip3 install supervisor` → version-pinned (avoids hadolint DL3013).
 - `dnf upgrade -y` during build to reduce fixable CRITICAL/HIGH Trivy findings.
 
