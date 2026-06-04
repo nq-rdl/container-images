@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1.7
+#
+# StarRocks BE (Backend) on UBI9
+# Blueprint: StarRocks/starrocks docker/dockerfiles/be/be-ubi.Dockerfile (ref 4.1.1)
+# Changes: ubi8/ubi:8.7 -> ubi9/ubi:9.8 (index-digest pinned); yum -> dnf + cache
+#          cleanup; MySQL release RPM el8 -> el9; BE java-1.8.0 -> java-11 (Java 8
+#          absent from UBI9 repos; current upstream BE uses JDK 11); dual digest-
+#          pinned artifact stages selected by ARG STARROCKS_VERSION.
+#
+ARG STARROCKS_VERSION=4.1.1
+
+# hadolint ignore=DL3026
+FROM docker.io/starrocks/artifacts-centos7:4.1.1@sha256:5b8e1dc0bc38544c2c618492e686b7f8903a7f8bbe09afdeaff7f2a78a46e66a AS artifacts-4.1.1
+# hadolint ignore=DL3026
+FROM docker.io/starrocks/artifacts-centos7:3.3.22@sha256:ccdf388ffe57a6dab771b95fb296ecf1df2bb4249e8961f05909cadaee61d3e3 AS artifacts-3.3.22
+
+# hadolint ignore=DL3006,DL3026
+FROM artifacts-${STARROCKS_VERSION} AS artifacts
+# Drop the BE debug-info to keep the runtime image lean (matches upstream be-ubi).
+RUN rm -f /release/be_artifacts/be/lib/starrocks_be.debuginfo
+
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
+
+ARG STARROCKS_VERSION
+ARG STARROCKS_ROOT=/opt/starrocks
+ARG STARROCKS_USER=starrocks
+ARG STARROCKS_GROUP=starrocks
+
+LABEL org.opencontainers.image.title="starrocks-be-ubi9"
+LABEL org.opencontainers.image.description="StarRocks BE (Backend) ${STARROCKS_VERSION} on UBI9"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+# hadolint ignore=DL3041
+RUN dnf install -y --nodocs --setopt=install_weak_deps=0 --allowerasing \
+        java-11-openjdk-devel \
+        tzdata openssl curl vim-minimal ca-certificates fontconfig \
+        gzip tar less hostname procps-ng lsof \
+    && rpm -ivh https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
+    && dnf install -y --nodocs --nogpgcheck mysql-community-client \
+    && dnf remove -y mysql80-community-release \
+    && dnf upgrade -y \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf /var/cache/yum
+
+ENV JAVA_HOME=/usr/lib/jvm/java-11
+
+RUN touch /.dockerenv
+
+WORKDIR ${STARROCKS_ROOT}
+
+RUN groupadd --gid 1000 ${STARROCKS_GROUP} \
+    && useradd --no-create-home --uid 1000 --gid 1000 --shell /usr/sbin/nologin ${STARROCKS_USER} \
+    && chown -R ${STARROCKS_USER}:${STARROCKS_GROUP} ${STARROCKS_ROOT}
+
+USER ${STARROCKS_USER}
+
+COPY --from=artifacts --chown=${STARROCKS_USER}:${STARROCKS_GROUP} /release/be_artifacts/ ${STARROCKS_ROOT}/
+COPY --chown=${STARROCKS_USER}:${STARROCKS_GROUP} *.sh ${STARROCKS_ROOT}/
+
+# BE storage dir + cn->be symlink so this image also serves the Operator's CN role.
+RUN mkdir -p ${STARROCKS_ROOT}/be/storage && ln -sfT be ${STARROCKS_ROOT}/cn
+
+# No server-starting default command — the Operator supplies it.
+# hadolint ignore=DL3002
+USER root
