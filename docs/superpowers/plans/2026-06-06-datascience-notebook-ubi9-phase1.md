@@ -307,8 +307,10 @@ skopeo inspect --no-tags docker://registry.access.redhat.com/ubi9/ubi:9.8 \
 # tini static amd64 + its published checksum:
 curl -fsSL -O https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64
 curl -fsSL https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64.sha256sum
-# pixi 0.47.0 binary checksum (record sha256 for the Containerfile):
-curl -fsSL -O https://github.com/prefix-dev/pixi/releases/download/v0.47.0/pixi-x86_64-unknown-linux-musl.tar.gz
+# pixi binary checksum. IMPORTANT: the in-image pixi version MUST match the host pixi that
+# generates pixi.lock (lockfile FORMAT version must be readable by the image's pixi). Host
+# pixi here is 0.70.1, so pin the image to 0.70.1 too. Verify the asset exists for the version.
+curl -fsSL -O https://github.com/prefix-dev/pixi/releases/download/v0.70.1/pixi-x86_64-unknown-linux-musl.tar.gz
 sha256sum pixi-x86_64-unknown-linux-musl.tar.gz
 rm -f tini-static-amd64 pixi-x86_64-unknown-linux-musl.tar.gz
 ```
@@ -333,7 +335,7 @@ ARG NB_USER="jovyan"
 ARG NB_UID="1000"
 ARG NB_GID="0"
 ARG PYTHON_VERSION=3.12
-ARG PIXI_VERSION=0.47.0
+ARG PIXI_VERSION=0.70.1
 ARG TINI_VERSION=0.19.0
 
 LABEL org.opencontainers.image.title="docker-stacks-foundation-ubi9"
