@@ -1,0 +1,22 @@
+name: base-notebook-ubi9
+description: Jupyter base-notebook on UBI9 (JupyterLab + Notebook + Hub single-user)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: ghcr.io
+  repository: nq-rdl/docker-stacks-foundation-ubi9
+  version: "2026.6.0"
+runtime:
+  name: jupyter-base-notebook
+tags:
+  - "2026.6.0"
+  - "2026.6"
+  - "latest"
+depends_on: docker-stacks-foundation-ubi9
+bake_target: base-notebook
+support:
+  status: stable
+  eol: "2027-06-30"

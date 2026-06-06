@@ -1,0 +1,14 @@
+[workspace]
+name = "base-notebook"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+pip = "*"
+jupyter_core = "*"
+jupyterhub-singleuser = "*"
+jupyterlab = "*"
+nbclassic = "*"
+notebook = ">=7.2.2"
+fonts-conda-forge = "*"     # meta-package: pulls in a standard conda-forge font set
