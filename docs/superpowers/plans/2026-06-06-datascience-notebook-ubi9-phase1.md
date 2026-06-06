@@ -334,9 +334,9 @@ FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:__UBI9_DIGEST__
 ARG NB_USER="jovyan"
 ARG NB_UID="1000"
 ARG NB_GID="0"
-ARG PYTHON_VERSION=3.12
 ARG PIXI_VERSION=0.70.1
 ARG TINI_VERSION=0.19.0
+# Python version is governed by pixi.toml (python = "3.12.*") + pixi.lock, not a build-arg.
 
 LABEL org.opencontainers.image.title="docker-stacks-foundation-ubi9"
 LABEL org.opencontainers.image.description="Jupyter docker-stacks-foundation on UBI9 (pixi/conda-forge)"

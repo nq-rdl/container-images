@@ -1,0 +1,111 @@
+# syntax=docker/dockerfile:1.7
+#
+# docker-stacks-foundation on UBI9
+# Blueprint: jupyter/docker-stacks@96322b6 images/docker-stacks-foundation/Dockerfile
+# Changes: ubuntu:24.04 -> ubi9/ubi (digest-pinned); apt -> dnf; locale-gen dropped
+#          (glibc C.UTF-8 built-in); micromamba+conda -> pixi (conda-forge) with a
+#          committed pixi.lock; NB_GID 100 -> 0 (OpenShift arbitrary-UID model);
+#          tini installed as a pinned static binary; conda-activate hook dropped (PATH-based).
+#
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:80b1f4c34a7eed1b03a05d12b55768f3e522eef6ec294c6fbd5fa47b6b2892ee
+
+ARG NB_USER="jovyan"
+ARG NB_UID="1000"
+ARG NB_GID="0"
+ARG PIXI_VERSION=0.70.1
+ARG TINI_VERSION=0.19.0
+
+LABEL org.opencontainers.image.title="docker-stacks-foundation-ubi9"
+LABEL org.opencontainers.image.description="Jupyter docker-stacks-foundation on UBI9 (pixi/conda-forge)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+USER root
+
+# OS deps actually ABSENT from the full ubi9/ubi image: sudo (start.sh root->user transition)
+# and glibc-langpack-en (locales; C.UTF-8 is built into glibc so no locale-gen). Pre-installed
+# already (verified via `docker run ... rpm -qa`): curl-minimal, tar, gzip, ca-certificates,
+# shadow-utils, findutils, which. netbase is NOT needed (UBI 'setup' provides /etc/protocols).
+# micromamba/bzip2 are NOT needed (pixi replaces micromamba).
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs sudo glibc-langpack-en \
+    && dnf upgrade -y \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+# tini (static) as a pinned binary; verify checksum.
+RUN curl -fsSL -o /usr/bin/tini \
+        "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-amd64" \
+    && echo "c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee  /usr/bin/tini" | sha256sum -c - \
+    && chmod +x /usr/bin/tini
+
+# pixi (static binary) as a pinned, checksum-verified install.
+RUN curl -fsSL -o /tmp/pixi.tar.gz \
+        "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl.tar.gz" \
+    && echo "09692fb29be000cde10ad3fbf61edb1d147cfb6ad539d365a573408615b774d1  /tmp/pixi.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pixi.tar.gz -C /usr/local/bin pixi \
+    && chmod +x /usr/local/bin/pixi \
+    && rm -f /tmp/pixi.tar.gz
+
+# pixi env prefix is exported as CONDA_DIR so the vendored start.sh (which derives PATH and
+# sudo secure_path from ${CONDA_DIR}/bin) works unmodified. PIXI_CACHE_DIR is set to a /tmp
+# path so we can deterministically `rm -rf` it after install (avoids bloating $HOME's layer).
+# NB_PIXI_PROJECT is a build-time convenience only; pixi does NOT read it — ad-hoc pixi
+# commands inside the container need `cd /opt/nb && pixi <cmd>`. curl-minimal is pre-installed
+# and supports -fsSL (not --compressed/--http2/--retry; install full curl if those are needed).
+ENV CONDA_DIR=/opt/nb/.pixi/envs/default \
+    NB_PIXI_PROJECT=/opt/nb \
+    PIXI_CACHE_DIR=/tmp/pixi-cache \
+    SHELL=/bin/bash \
+    NB_USER="${NB_USER}" \
+    NB_UID=${NB_UID} \
+    NB_GID=${NB_GID} \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    LANGUAGE=C.UTF-8
+ENV PATH="${CONDA_DIR}/bin:${PATH}" \
+    HOME="/home/${NB_USER}"
+
+COPY fix-permissions /usr/local/bin/fix-permissions
+RUN chmod a+rx /usr/local/bin/fix-permissions
+
+# Color prompt in skel (UBI skel differs from Ubuntu; add the line unconditionally).
+RUN echo 'force_color_prompt=yes' >> /etc/skel/.bashrc
+
+# Create the jovyan user with primary group 0 (root group) for arbitrary-UID tolerance.
+# Block `su` by inserting the deny at the TOP of the auth stack (not appended at EOF)
+# UBI sudoers uses %wheel (no %admin/%sudo), so comment %wheel to disable group sudo;
+# remove the .bak the sed leaves behind.
+RUN sed -i '1s;^;auth requisite pam_deny.so\n;' /etc/pam.d/su \
+    && sed -i.bak -e 's/^%wheel/#%wheel/' /etc/sudoers && rm -f /etc/sudoers.bak \
+    && useradd --no-log-init --create-home --shell /bin/bash --uid "${NB_UID}" --gid "${NB_GID}" "${NB_USER}" \
+    && mkdir -p "${NB_PIXI_PROJECT}" \
+    && chown "${NB_USER}:${NB_GID}" "${NB_PIXI_PROJECT}" \
+    && chmod g+w /etc/passwd \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
+    && fix-permissions "/home/${NB_USER}"
+
+USER ${NB_UID}
+WORKDIR /opt/nb
+
+# Build the base conda-forge env from the committed lockfile (reproducible).
+# fix-permissions runs as jovyan: jovyan OWNS these trees and is a member of GID 0, so
+# `chgrp 0` + `chmod g+rwX` succeed without root.
+COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
+RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && rm -rf /tmp/pixi-cache \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
+    && fix-permissions "/home/${NB_USER}"
+
+RUN mkdir -p "/home/${NB_USER}/work" && fix-permissions "/home/${NB_USER}"
+
+# Runtime scripts (copied late to avoid cache busting).
+COPY _docker_stacks_log.sh run-hooks.sh start.sh /usr/local/bin/
+ENTRYPOINT ["tini", "-g", "--", "start.sh"]
+
+USER root
+RUN mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d \
+    && fix-permissions /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d
+
+USER ${NB_UID}
+WORKDIR "${HOME}"

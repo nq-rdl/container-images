@@ -1,0 +1,21 @@
+name: docker-stacks-foundation-ubi9
+description: Jupyter docker-stacks-foundation on UBI9 (pixi/conda-forge)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi
+  version: "9.8"
+runtime:
+  name: jupyter-foundation
+tags:
+  - "2026.6.0"
+  - "2026.6"
+  - "latest"
+bake_target: foundation
+support:
+  status: stable
+  eol: "2027-06-30"
