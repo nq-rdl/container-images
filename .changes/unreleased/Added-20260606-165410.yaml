@@ -1,0 +1,3 @@
+kind: Added
+body: 'UBI9 Jupyter notebook stack (phase 1): docker-stacks-foundation-ubi9 and base-notebook-ubi9 images built with pixi/conda-forge and chained via docker buildx bake; adds repo-internal chained-base policy support (base_image.rego + test-chained-bases-pinned.sh), ghcr.io trust in hadolint, and a CI bake job (#30)'
+time: 2026-06-06T16:54:10.234238645+10:00
