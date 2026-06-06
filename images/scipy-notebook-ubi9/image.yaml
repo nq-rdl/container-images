@@ -1,0 +1,22 @@
+name: scipy-notebook-ubi9
+description: Jupyter scipy-notebook on UBI9 — full SciPy stack via conda-forge (pixi)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: ghcr.io
+  repository: nq-rdl/minimal-notebook-ubi9
+  version: "2026.6.0"
+runtime:
+  name: jupyter-scipy-notebook
+tags:
+  - "2026.6.0"
+  - "2026.6"
+  - "latest"
+depends_on: minimal-notebook-ubi9
+bake_target: scipy-notebook
+support:
+  status: stable
+  eol: "2027-06-30"

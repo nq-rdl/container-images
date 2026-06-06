@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+#
+# scipy-notebook on UBI9 (chained on minimal-notebook-ubi9)
+# Blueprint: jupyter/docker-stacks@96322b6 images/scipy-notebook/Dockerfile
+# Changes: BASE_IMAGE -> ${BASE_CONTAINER}; apt -> dnf; build-essential -> gcc gcc-c++ make;
+#          ffmpeg -> conda-forge::ffmpeg (no RPM Fusion/EPEL); dvipng + cm-super DROPPED
+#          (absent from conda-forge, UBI9, EPEL; usetex=True unsupported); all conda installs
+#          -> pixi install --locked. No COPY (no scripts at this layer).
+#
+# ARG BASE_CONTAINER default: placeholder digest from the locally-built minimal-notebook image.
+# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use the
+# in-graph minimal-notebook target, so the digest below is never pulled from a registry.
+# Replace with the pushed ghcr.io/nq-rdl/minimal-notebook-ubi9 digest after it is published.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/minimal-notebook-ubi9:2026.6.0@sha256:640ebba9ab2959fd6489f0b0e30b0434bfa5b3308b9e478ee766e1546e448834
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER}
+
+LABEL org.opencontainers.image.title="scipy-notebook-ubi9"
+LABEL org.opencontainers.image.description="Jupyter scipy-notebook on UBI9 — full SciPy stack via conda-forge (pixi)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+USER root
+
+# UBI9 equivalents of Debian build-essential (BaseOS/AppStream; no EPEL). Needed for Cython
+# .pyx compilation and any source-built C extension (rare with conda-forge binaries).
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs \
+        gcc \
+        gcc-c++ \
+        make \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+USER ${NB_UID}
+
+# Cumulative pixi.toml: all ancestor deps + the full SciPy stack + ffmpeg.
+COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
+RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && python -c "import numpy, pandas, scipy, sklearn, matplotlib" \
+    && rm -rf /tmp/pixi-cache \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
+    && fix-permissions "/home/${NB_USER}"
+
+USER ${NB_UID}
+WORKDIR "${HOME}"
