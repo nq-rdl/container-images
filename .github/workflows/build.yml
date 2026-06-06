@@ -380,6 +380,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: "2026.6.0"
+      # Keep TAG/MINOR in sync with docker-bake.hcl and the image.yaml tags.
+      MINOR: "2026.6"
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
@@ -433,3 +435,22 @@ jobs:
         with:
           sarif_file: trivy-base-notebook-ubi9.sarif
           category: trivy-base-notebook-ubi9
+
+      - name: Publish convenience aliases
+        if: github.event_name != 'pull_request'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          for name in docker-stacks-foundation-ubi9 base-notebook-ubi9; do
+            [[ "$name" =~ ^(.+)-ubi([0-9]+)$ ]] || continue
+            alias="${BASH_REMATCH[1]}"
+            src="ghcr.io/${OWNER}/${name}"
+            digest=$(docker buildx imagetools inspect "${src}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
+            docker buildx imagetools create \
+              --tag "ghcr.io/${OWNER}/${alias}:${TAG}" \
+              --tag "ghcr.io/${OWNER}/${alias}:${MINOR}" \
+              --tag "ghcr.io/${OWNER}/${alias}:latest" \
+              "${src}@${digest}"
+            echo "Published aliases for ${alias}: ${TAG}, ${MINOR}, latest"
+          done

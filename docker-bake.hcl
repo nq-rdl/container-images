@@ -1,5 +1,7 @@
+# TAG/MINOR must stay in sync with each image.yaml's tags and build.yml's bake-job env.
 variable "REGISTRY" { default = "ghcr.io/nq-rdl" }
 variable "TAG"      { default = "2026.6.0" }
+variable "MINOR"    { default = "2026.6" }
 
 group "datascience" {
   targets = ["foundation", "base-notebook"]
@@ -11,6 +13,7 @@ target "foundation" {
   platforms  = ["linux/amd64"]
   tags = [
     "${REGISTRY}/docker-stacks-foundation-ubi9:${TAG}",
+    "${REGISTRY}/docker-stacks-foundation-ubi9:${MINOR}",
     "${REGISTRY}/docker-stacks-foundation-ubi9:latest",
   ]
   cache-from = ["type=gha,scope=docker-stacks-foundation-ubi9"]
@@ -31,6 +34,7 @@ target "base-notebook" {
   }
   tags = [
     "${REGISTRY}/base-notebook-ubi9:${TAG}",
+    "${REGISTRY}/base-notebook-ubi9:${MINOR}",
     "${REGISTRY}/base-notebook-ubi9:latest",
   ]
   cache-from = ["type=gha,scope=base-notebook-ubi9"]
