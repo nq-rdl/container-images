@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1.7
+#
+# minimal-notebook on UBI9 (chained on base-notebook-ubi9)
+# Blueprint: jupyter/docker-stacks@96322b6 images/minimal-notebook/Dockerfile
+# Changes: BASE_IMAGE -> ${BASE_CONTAINER} (repo-internal UBI-rooted base); apt -> dnf;
+#          nano-tiny -> nano (drop update-alternatives); vim-tiny -> vim-minimal;
+#          openssh-client -> openssh-clients; texlive-* (Debian) -> conda-forge texlive-core
+#          (pdflatex/bibtex; NO xelatex); dvipng + cm-super DROPPED (absent from conda-forge,
+#          UBI9 base, and EPEL — usetex=True unsupported); xclip DROPPED (headless, no X11);
+#          run-one DROPPED (no RPM). Rprofile.site + setup-scripts vendored from upstream.
+#
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0@sha256:34a7714369d3cecaa8b9f7cd091e418577114f0ac7d1d9c76a502a5fa1f4b856
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER}
+
+LABEL org.opencontainers.image.title="minimal-notebook-ubi9"
+LABEL org.opencontainers.image.description="Jupyter minimal-notebook on UBI9 (git/vim/ssh + TeX via conda-forge)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+USER root
+
+# Thin OS tools absent from the base image. curl/tzdata/less are pre-installed on full ubi9/ubi.
+# (TeX/dvipng/cm-super are NOT here — see header: texlive-core comes from conda-forge; dvipng/
+# cm-super are dropped. No EPEL.)
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs \
+        git \
+        nano \
+        vim-minimal \
+        openssh-clients \
+        unzip \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+USER ${NB_UID}
+
+# Cumulative pixi.toml: all ancestor deps + texlive-core for this layer.
+COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
+RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && rm -rf /tmp/pixi-cache \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
+    && fix-permissions "/home/${NB_USER}"
+
+# Rprofile.site: R plot mimetypes so plots render in the browser (path mirrors upstream).
+COPY --chown=${NB_UID}:${NB_GID} Rprofile.site "${CONDA_DIR}/lib/R/etc/"
+# setup-scripts: helpers for downstream images (Julia kernel, custom conda env activation).
+COPY --chown=${NB_UID}:${NB_GID} setup-scripts/ /opt/setup-scripts/
+
+USER root
+RUN fix-permissions /opt/setup-scripts
+
+USER ${NB_UID}
+WORKDIR "${HOME}"

@@ -1,0 +1,22 @@
+[workspace]
+name = "minimal-notebook"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+# ── inherited from docker-stacks-foundation-ubi9 ──────────────────────────
+python = "3.12.*"
+pip = "*"
+jupyter_core = "*"
+# ── inherited from base-notebook-ubi9 ────────────────────────────────────
+jupyterhub-singleuser = "*"
+jupyterlab = "*"
+nbclassic = "*"
+notebook = ">=7.2.2"
+fonts-conda-forge = "*"
+# ── this layer (minimal-notebook-ubi9) ───────────────────────────────────
+# TeX Live via conda-forge: provides pdflatex + bibtex for nbconvert PDF export.
+# NOTE: conda-forge texlive-core does NOT ship xelatex; nbconvert PDF uses pdflatex.
+# dvipng + cm-super are NOT available on conda-forge OR UBI9/EPEL and are NOT installed
+# (matplotlib text.usetex=True is unsupported; the default mathtext renderer works).
+texlive-core = "*"
