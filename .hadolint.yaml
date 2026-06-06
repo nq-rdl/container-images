@@ -8,3 +8,4 @@ ignored:
 trustedRegistries:
   - registry.access.redhat.com
   - registry.redhat.io
+  - ghcr.io
