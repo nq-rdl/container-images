@@ -1,7 +1,7 @@
 # Datascience-notebook UBI9 stack + BuildKit
 
 - **Date:** 2026-06-06
-- **Status:** Draft — pending user review (and Codex review of the user/permission model, §8)
+- **Status:** Implemented (Phase 1) — foundation + base-notebook shipped; the GID-0 user model was validated empirically (arbitrary-UID smoke passed) during implementation
 - **Branch:** `feat/datascience-notebook-ubi9`
 - **Closes:** Issue #30 (*Feat: Buildkit*) — and delivers the `/goal`: UBI9 images for the
   `datascience-notebook` stack and its upstream lineage, built with BuildKit.
@@ -136,7 +136,7 @@ lockfile coverage. If version currency ever matters, the official-tarball path v
 | `locales` + `locale-gen` | `glibc-langpack-en` (drop `locale-gen`; set `LANG`/`LC_ALL`/`LANGUAGE` directly) |
 | `tini` | static binary from `krallin/tini` releases (pinned ver + sha256 → `/usr/bin/tini`) |
 | `pandoc` | static binary from `jgm/pandoc` releases (pinned ver + sha256) |
-| `fonts-liberation` | `liberation-mono-fonts` + `liberation-fonts-common` (RPM; UBI9 has no sans/serif RPM) + `font-ttf-liberation` via conda-forge for full coverage |
+| `fonts-liberation` | `liberation-mono-fonts` + `liberation-fonts-common` (RPM; UBI9 has no sans/serif RPM) + the `fonts-conda-forge` meta-package (note: `font-ttf-liberation` does **not** exist on conda-forge) |
 | `fonts-dejavu` | `dejavu-*-fonts` (BaseOS/AppStream) |
 | `vim-tiny` / `nano-tiny` | `vim-minimal` / `nano` (drop `update-alternatives`) |
 | `openssh-client` | `openssh-clients` |
@@ -204,8 +204,10 @@ published parent.
 **`.github/workflows/build.yml`** — the `discover` job excludes images carrying
 `bake_target:` from the per-image matrix (existing images keep the current path). A new job
 runs `docker buildx bake --file docker-bake.hcl datascience` with `--load` on PRs and
-`--push` on `main`/dispatch, then runs the existing Trivy scan + provenance/SBOM attestation
-per resulting image. `type=gha` cache + parallel sibling builds give the issue's
+`--push` on `main`/dispatch, then runs the existing Trivy scan per resulting image
+(provenance/SBOM attestation for the bake images is deferred to Phase 2). On `main`, a
+follow-up step mints the suffix-less convenience aliases (`docker-stacks-foundation`,
+`base-notebook`). `type=gha` cache + parallel sibling builds give the issue's
 "parallel … for optimal speed."
 
 **`scripts/smoke-test.sh` / `scripts/trivy-scan.sh`** — for the chain, invoke
@@ -261,7 +263,7 @@ deny contains msg if {
 
 ## 8. User / permission model
 
-**Decision (pending Codex review, §14):** keep upstream's identity but adopt this repo's
+**Decision (validated in Phase 1):** keep upstream's identity but adopt this repo's
 arbitrary-UID posture — **`NB_USER=jovyan`, `NB_UID=1000`, `NB_GID=0`** (primary group
 root), with `fix-permissions` run against **GID 0**. Rationale:
 
@@ -276,7 +278,10 @@ root), with `fix-permissions` run against **GID 0**. Rationale:
 Pitfalls to verify in Phase 1: GID 100 (`users`) already exists on UBI9 (we use 0, so moot);
 pixi/conda env files must be group-0 readable/writable after `fix-permissions`; the
 `/etc/passwd` group-write + `start.sh` self-registration of the arbitrary UID works on UBI9.
-**Codex is reviewing this exact decision**; if it diverges, §8 is updated before Phase 1.
+This decision was **validated empirically during Phase 1**: foundation and base-notebook run
+correctly under an arbitrary runtime UID (`--user 4711:0`) — `start.sh` self-registers the UID
+into the group-0-writable `/etc/passwd`. (A Codex second opinion was requested but the job hung
+and was cancelled; the empirical smoke is the stronger evidence anyway.)
 
 ## 9. Runtime contract (JupyterHub / k8s-ready)
 
@@ -382,4 +387,4 @@ digests, and `publish-aliases` mints the suffix-less aliases. Consumers pin by `
 1. **Foundation image name** — `docker-stacks-foundation-ubi9` (faithful) vs the terser
    `notebook-foundation-ubi9`. Defaulting to the faithful name.
 2. **Python version** — `3.12` chosen for conda-forge breadth; confirm vs `3.11`/`3.13`.
-3. **User/permission model** — `jovyan`/UID 1000/**GID 0** (§8), pending Codex's verdict.
+3. **User/permission model** — `jovyan`/UID 1000/**GID 0** (§8) — validated in Phase 1 (arbitrary-UID smoke passed).

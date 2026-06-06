@@ -12,7 +12,7 @@ committed `pixi.lock` per image; the env prefix is exported as `CONDA_DIR` so up
 `start.sh` runtime contract works unmodified. User model: `jovyan` / UID 1000 / **GID 0**
 (OpenShift arbitrary-UID friendly). amd64 only.
 
-**Tech Stack:** UBI9 (`registry.access.redhat.com/ubi9/ubi`), pixi 0.47.0, conda-forge,
+**Tech Stack:** UBI9 (`registry.access.redhat.com/ubi9/ubi`), pixi 0.70.1, conda-forge,
 `tini` 0.19.0 (static binary), JupyterLab/Notebook/JupyterHub-singleuser, `docker buildx
 bake`, conftest/OPA (rego), hadolint, Trivy, k3d smoke tests.
 
