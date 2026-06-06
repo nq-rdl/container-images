@@ -217,7 +217,13 @@ jobs:
           category: trivy-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}
 
       - name: Attest build provenance
+        id: attest-provenance
         if: github.event_name != 'pull_request'
+        # continue-on-error lets the retry step below absorb transient Sigstore/Rekor
+        # failures (e.g. "error creating tlog entry") without failing the whole build.
+        # The retry gates on steps.<id>.outcome (NOT conclusion): continue-on-error forces
+        # conclusion to 'success', so only outcome still reports the real 'failure'.
+        continue-on-error: true
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
@@ -225,21 +231,46 @@ jobs:
           # Not pushed to GHCR (push creates sha256-<digest> referrer tags); verified via the GitHub attestation API instead.
           push-to-registry: false
 
+      - name: Attest build provenance (retry)
+        # One retry on transient Sigstore/Rekor failures. If this also fails the build fails.
+        if: github.event_name != 'pull_request' && steps.attest-provenance.outcome == 'failure'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          push-to-registry: false
+
       - name: Generate SBOM
         if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@v0
         with:
           image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}@${{ steps.build-push.outputs.digest }}
-          format: spdx-json
-          output-file: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.spdx.json
+          # CycloneDX JSON is materially more compact than SPDX JSON. actions/attest-sbom
+          # rejects SBOMs larger than 16 MiB; the StarRocks allin1 image's SPDX SBOM
+          # exceeded that (~17.3 MiB), whereas its CycloneDX SBOM is ~10.4 MiB.
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.cdx.json
 
       - name: Attest SBOM
+        id: attest-sbom
         if: github.event_name != 'pull_request'
+        # See the provenance step above: retry below absorbs transient Sigstore/Rekor failures.
+        continue-on-error: true
         uses: actions/attest-sbom@v4
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
-          sbom-path: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.spdx.json
+          sbom-path: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.cdx.json
+          push-to-registry: false
+
+      - name: Attest SBOM (retry)
+        # One retry on transient Sigstore/Rekor failures. If this also fails the build fails.
+        if: github.event_name != 'pull_request' && steps.attest-sbom.outcome == 'failure'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          sbom-path: sbom-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.cdx.json
           push-to-registry: false
 
   publish-aliases:
