@@ -136,7 +136,7 @@ lockfile coverage. If version currency ever matters, the official-tarball path v
 | `locales` + `locale-gen` | `glibc-langpack-en` (drop `locale-gen`; set `LANG`/`LC_ALL`/`LANGUAGE` directly) |
 | `tini` | static binary from `krallin/tini` releases (pinned ver + sha256 → `/usr/bin/tini`) |
 | `pandoc` | static binary from `jgm/pandoc` releases (pinned ver + sha256) |
-| `fonts-liberation` | `liberation-fonts` (BaseOS) |
+| `fonts-liberation` | `liberation-mono-fonts` + `liberation-fonts-common` (RPM; UBI9 has no sans/serif RPM) + `font-ttf-liberation` via conda-forge for full coverage |
 | `fonts-dejavu` | `dejavu-*-fonts` (BaseOS/AppStream) |
 | `vim-tiny` / `nano-tiny` | `vim-minimal` / `nano` (drop `update-alternatives`) |
 | `openssh-client` | `openssh-clients` |
@@ -193,8 +193,13 @@ ARG BASE_CONTAINER=ghcr.io/nq-rdl/<parent>-ubi9:2026.6.0@sha256:<digest>
 FROM ${BASE_CONTAINER}
 ```
 
-Bake overrides `BASE_CONTAINER` to the named context (`target:<parent>`) for in-graph builds;
-for a standalone `docker build` the digest-pinned default pulls the published parent.
+Bake passes the **tagless** image name as a `BASE_CONTAINER` build-arg override **and**
+simultaneously registers a named `context` under that same tagless key pointing to
+`target:<parent>`. Both halves are required together: `args` makes BuildKit resolve a tagless
+`FROM`, and `contexts` maps that ref to the in-graph target (matched after BuildKit's
+`TrimSuffix(":latest")` normalization). Omitting either half silently falls back to a registry
+pull. For a standalone `docker build` (no bake) the digest-pinned `ARG` default pulls the
+published parent.
 
 **`.github/workflows/build.yml`** — the `discover` job excludes images carrying
 `bake_target:` from the per-image matrix (existing images keep the current path). A new job
@@ -277,7 +282,9 @@ pixi/conda env files must be group-0 readable/writable after `fix-permissions`; 
 
 Faithful, OS-agnostic port (copied largely verbatim — all bash/Python):
 `fix-permissions`, `_docker_stacks_log.sh`, `run-hooks.sh`, `start.sh`,
-`before-notebook.d/10activate-conda-env.sh` (replaced with a pixi/PATH activation hook),
+`before-notebook.d/10activate-conda-env.sh` (dropped — it runs `conda shell.bash hook`; pixi
+ships no `conda`, and `${CONDA_DIR}/bin` is on `PATH` via `ENV`, so PATH-based activation
+suffices; `conda activate` is unavailable),
 `initial-condarc` (pixi-equivalent channel config), `start-notebook.py`,
 `start-singleuser.py`, `jupyter_server_config.py`, `docker_healthcheck.py`.
 `ENTRYPOINT ["tini","-g","--","start.sh"]`; `CMD ["start-notebook.py"]` at base-notebook;

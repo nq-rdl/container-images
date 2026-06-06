@@ -141,33 +141,41 @@ Create `policy/base_image_test.rego`:
 ```rego
 package main
 
-# A chained child: final FROM is the ${BASE_CONTAINER} sentinel → must be ALLOWED.
+# conftest aggregates EVERY `deny` in package main (base_image.rego AND labels.rego), so we
+# isolate the rule under test by filtering to its message ("Final FROM"). This keeps the tests
+# independent of labels.rego (which would otherwise deny these label-less fixtures).
+
+# A chained child: final FROM is the ${BASE_CONTAINER} sentinel -> ALLOWED.
 test_allows_base_container_sentinel if {
-    count(deny) == 0 with input as [
-        {"Cmd": "arg", "Value": ["BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:abc"]},
-        {"Cmd": "from", "Value": ["${BASE_CONTAINER}"]},
-    ]
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "arg", "Value": ["BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:abc"]},
+		{"Cmd": "from", "Value": ["${BASE_CONTAINER}"]},
+	]
+	count(msgs) == 0
 }
 
-# A direct ghcr.io/nq-rdl chained base → ALLOWED.
+# A direct ghcr.io/nq-rdl chained base -> ALLOWED.
 test_allows_ghcr_internal_base if {
-    count(deny) == 0 with input as [
-        {"Cmd": "from", "Value": ["ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0@sha256:abc"]},
-    ]
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0@sha256:abc"]},
+	]
+	count(msgs) == 0
 }
 
-# A UBI base → still ALLOWED.
+# A UBI base -> ALLOWED.
 test_allows_ubi_base if {
-    count(deny) == 0 with input as [
-        {"Cmd": "from", "Value": ["registry.access.redhat.com/ubi9/ubi:9.8@sha256:abc"]},
-    ]
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["registry.access.redhat.com/ubi9/ubi:9.8@sha256:abc"]},
+	]
+	count(msgs) == 0
 }
 
-# An arbitrary external base → still DENIED.
+# An arbitrary external base -> DENIED.
 test_denies_dockerhub_base if {
-    count(deny) == 1 with input as [
-        {"Cmd": "from", "Value": ["ubuntu:24.04"]},
-    ]
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["ubuntu:24.04"]},
+	]
+	count(msgs) == 1
 }
 ```
 
@@ -337,12 +345,12 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause"
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER root
 
-# OS deps: sudo (start.sh root->user transition), shadow-utils (useradd), glibc-langpack-en
-# (locales; C.UTF-8 is built into glibc so no locale-gen), ca-certificates, tar/gzip/bzip2,
-# and wget for downloads. netbase is NOT needed (UBI 'setup' provides /etc/protocols etc.).
-RUN dnf install -y --setopt=install_weak_deps=0 --nodocs \
-        sudo shadow-utils glibc-langpack-en ca-certificates \
-        tar gzip bzip2 wget which findutils \
+# OS deps actually ABSENT from the full ubi9/ubi image: sudo (start.sh root->user transition)
+# and glibc-langpack-en (locales; C.UTF-8 is built into glibc so no locale-gen). Pre-installed
+# already (verified via `docker run ... rpm -qa`): curl-minimal, tar, gzip, ca-certificates,
+# shadow-utils, findutils, which. netbase is NOT needed (UBI 'setup' provides /etc/protocols).
+# micromamba/bzip2 are NOT needed (pixi replaces micromamba).
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs sudo glibc-langpack-en \
     && dnf upgrade -y \
     && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
@@ -361,9 +369,14 @@ RUN curl -fsSL -o /tmp/pixi.tar.gz \
     && rm -f /tmp/pixi.tar.gz
 
 # pixi env prefix is exported as CONDA_DIR so the vendored start.sh (which derives PATH and
-# sudo secure_path from ${CONDA_DIR}/bin) works unmodified.
+# sudo secure_path from ${CONDA_DIR}/bin) works unmodified. PIXI_CACHE_DIR is set to a /tmp
+# path so we can deterministically `rm -rf` it after install (avoids bloating $HOME's layer).
+# NB_PIXI_PROJECT is a build-time convenience only; pixi does NOT read it — ad-hoc pixi
+# commands inside the container need `cd /opt/nb && pixi <cmd>`. curl-minimal is pre-installed
+# and supports -fsSL (not --compressed/--http2/--retry; install full curl if those are needed).
 ENV CONDA_DIR=/opt/nb/.pixi/envs/default \
-    PIXI_PROJECT=/opt/nb \
+    NB_PIXI_PROJECT=/opt/nb \
+    PIXI_CACHE_DIR=/tmp/pixi-cache \
     SHELL=/bin/bash \
     NB_USER="${NB_USER}" \
     NB_UID=${NB_UID} \
@@ -381,24 +394,28 @@ RUN chmod a+rx /usr/local/bin/fix-permissions
 RUN echo 'force_color_prompt=yes' >> /etc/skel/.bashrc
 
 # Create the jovyan user with primary group 0 (root group) for arbitrary-UID tolerance.
-# Block `su`; UBI sudoers uses %wheel (no %admin/%sudo), so comment %wheel to disable group sudo.
-RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su \
-    && sed -i.bak -e 's/^%wheel/#%wheel/' /etc/sudoers \
+# Block `su` by inserting the deny at the TOP of the auth stack (not appended at EOF).
+# UBI sudoers uses %wheel (no %admin/%sudo), so comment %wheel to disable group sudo;
+# remove the .bak the sed leaves behind.
+RUN sed -i '1s;^;auth requisite pam_deny.so\n;' /etc/pam.d/su \
+    && sed -i.bak -e 's/^%wheel/#%wheel/' /etc/sudoers && rm -f /etc/sudoers.bak \
     && useradd --no-log-init --create-home --shell /bin/bash --uid "${NB_UID}" --gid "${NB_GID}" "${NB_USER}" \
-    && mkdir -p "${PIXI_PROJECT}" \
-    && chown "${NB_USER}:${NB_GID}" "${PIXI_PROJECT}" \
+    && mkdir -p "${NB_PIXI_PROJECT}" \
+    && chown "${NB_USER}:${NB_GID}" "${NB_PIXI_PROJECT}" \
     && chmod g+w /etc/passwd \
-    && fix-permissions "${PIXI_PROJECT}" \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"
 
 USER ${NB_UID}
 WORKDIR /opt/nb
 
 # Build the base conda-forge env from the committed lockfile (reproducible).
+# fix-permissions runs as jovyan: jovyan OWNS these trees and is a member of GID 0, so
+# `chgrp 0` + `chmod g+rwX` succeed without root.
 COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
 RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
-    && pixi clean cache --yes || true \
-    && fix-permissions "${PIXI_PROJECT}" \
+    && rm -rf /tmp/pixi-cache \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir -p "/home/${NB_USER}/work" && fix-permissions "/home/${NB_USER}"
@@ -604,6 +621,7 @@ jupyterhub-singleuser = "*"
 jupyterlab = "*"
 nbclassic = "*"
 notebook = ">=7.2.2"
+font-ttf-liberation = "*"   # full sans+serif+mono fonts (UBI9 RPMs only ship mono)
 ```
 
 - [ ] **Step 3: Generate the lockfile**
@@ -657,9 +675,11 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause"
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER root
 
-# Fonts for matplotlib/seaborn. pandoc (for nbconvert -> html/pdf) as a pinned static binary
-# (not in UBI BaseOS/AppStream). run-one is intentionally dropped (RESTARTABLE unsupported).
-RUN dnf install -y --setopt=install_weak_deps=0 --nodocs liberation-fonts \
+# Fonts for matplotlib/seaborn. UBI9 ships only liberation-mono-fonts + liberation-fonts-common
+# (NO sans/serif RPMs) — full sans+serif+mono coverage comes from conda-forge
+# (font-ttf-liberation, in pixi.toml). pandoc (for nbconvert -> html/pdf) as a pinned static
+# binary (not in UBI BaseOS/AppStream). run-one is intentionally dropped (RESTARTABLE unsupported).
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs liberation-mono-fonts liberation-fonts-common \
     && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 RUN curl -fsSL -o /tmp/pandoc.tar.gz \
         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
@@ -671,12 +691,17 @@ RUN curl -fsSL -o /tmp/pandoc.tar.gz \
 
 USER ${NB_UID}
 
-# Add the Jupyter server stack to the inherited pixi env, from the committed lockfile.
+# pixi.lock is a STANDALONE CUMULATIVE solve (all direct+transitive deps for linux-64).
+# `pixi install --locked` delta-applies to the inherited /opt/nb prefix: it ADDS new packages
+# and would REMOVE any parent package no longer a transitive dep — so each layer's pixi.toml
+# MUST list the full cumulative dependency set. Regenerate: `cd <imagedir> && pixi lock`.
+# PIXI_CACHE_DIR (=/tmp/pixi-cache) is inherited from the foundation ENV.
 COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
 RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && python -c 'import jupyter_core, notebook, jupyterlab' \
     && jupyter server --generate-config \
     && jupyter lab clean \
-    && pixi clean cache --yes || true \
+    && rm -rf /tmp/pixi-cache \
     && fix-permissions "${CONDA_DIR}" \
     && fix-permissions "/home/${NB_USER}"
 
@@ -769,7 +794,7 @@ docker run --rm ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0 \
 # Healthcheck/server smoke (start a server, curl /api, stop):
 cid=$(docker run -d -p 8888:8888 ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0 \
        start-notebook.py --IdentityProvider.token=smoke)
-sleep 8 && curl -fsSL "http://localhost:8888/api" && echo " <- server OK"
+sleep 8 && docker exec "$cid" /etc/jupyter/docker_healthcheck.py && echo " <- server healthcheck OK"
 docker logs "$cid" | tail -5; docker rm -f "$cid"
 ```
 Expected: `jupyter --version` lists components; `/api` returns JSON `{"version": ...}`.
@@ -789,9 +814,20 @@ git commit -m "feat(base-notebook-ubi9): Jupyter base-notebook on UBI9, chained 
 **Files:**
 - Modify: `.github/workflows/build.yml`
 
-- [ ] **Step 1: Exclude `bake_target` images from the per-image matrix**
+- [ ] **Step 1: Trigger on `docker-bake.hcl`, and exclude `bake_target` images from the matrix**
 
-In `build.yml`'s `discover` job `set-matrix` step, after collecting `DIRS`, drop directories
+First, add `docker-bake.hcl` to the workflow trigger paths (otherwise bake-file changes never
+run CI):
+```yaml
+on:
+  push:
+    branches: [main]
+    paths: ['images/**', '.github/workflows/build.yml', 'docker-bake.hcl']
+  pull_request:
+    paths: ['images/**', '.github/workflows/build.yml', 'docker-bake.hcl']
+```
+
+Then, in the `discover` job `set-matrix` step, after collecting `DIRS`, drop directories
 whose `image.yaml` declares `bake_target:` (they are built by the new `bake` job). Add this
 filter right before the matrix-building loop:
 ```bash
@@ -812,6 +848,8 @@ driving `docker buildx bake`:
 ```yaml
   bake:
     runs-on: ubuntu-latest
+    env:
+      TAG: "2026.6.0"
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
@@ -834,25 +872,44 @@ driving `docker buildx bake`:
             docker buildx bake --file docker-bake.hcl --push datascience
           fi
 
-      - name: Trivy scan (foundation + base-notebook)
-        run: |
-          set -euo pipefail
-          for img in docker-stacks-foundation-ubi9 base-notebook-ubi9; do
-            ref="ghcr.io/${{ github.repository_owner }}/${img}:2026.6.0"
-            trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 0 \
-              --format sarif --output "trivy-${img}.sarif" "$ref" || true
-          done
-
-      - name: Upload Trivy results
+      # trivy is NOT pre-installed on ubuntu-latest — use the action (mirrors the matrix `build`
+      # job) and reference the tag via ${{ env.TAG }}, one block per image.
+      - name: Trivy scan (foundation)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/docker-stacks-foundation-ubi9:${{ env.TAG }}
+          format: sarif
+          output: trivy-docker-stacks-foundation-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (foundation)
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: .
-          category: trivy-bake
+          sarif_file: trivy-docker-stacks-foundation-ubi9.sarif
+          category: trivy-docker-stacks-foundation-ubi9
+
+      - name: Trivy scan (base-notebook)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/base-notebook-ubi9:${{ env.TAG }}
+          format: sarif
+          output: trivy-base-notebook-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (base-notebook)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-base-notebook-ubi9.sarif
+          category: trivy-base-notebook-ubi9
 ```
-Note: keep the existing `provenance`/`sbom`/attestation pattern if desired; for Phase 1 the
-Trivy gate + push is the minimum. (A follow-up can add per-image attestation by iterating the
-two images like the matrix `build` job does.)
+The `TAG` env must be declared at the job (or step) level so `${{ env.TAG }}` resolves in the
+`with:` blocks. Keep the existing `provenance`/`sbom`/attestation pattern if desired; for
+Phase 1 the Trivy gate + push is the minimum. (A follow-up can add per-image attestation by
+iterating the two images like the matrix `build` job does.)
 
 - [ ] **Step 3: Lint the workflow**
 
