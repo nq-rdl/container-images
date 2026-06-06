@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Build Images CI: attest a CycloneDX SBOM (~10 MiB) instead of SPDX (~17 MiB) so the StarRocks allin1 image stays under actions/attest-sbom''s 16 MiB cap, and retry build-provenance/SBOM attestation once on transient Sigstore/Rekor errors (e.g. "error creating tlog entry").'
+time: 2026-06-06T11:24:08.056546082+10:00
