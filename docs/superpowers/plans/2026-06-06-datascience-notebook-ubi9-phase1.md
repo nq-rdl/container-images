@@ -704,7 +704,7 @@ RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
     && jupyter server --generate-config \
     && jupyter lab clean \
     && rm -rf /tmp/pixi-cache \
-    && fix-permissions "${CONDA_DIR}" \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"
 
 ENV JUPYTER_PORT=8888

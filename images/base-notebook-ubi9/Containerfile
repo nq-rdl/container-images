@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1.7
+#
+# base-notebook on UBI9 (chained on docker-stacks-foundation-ubi9)
+# Blueprint: jupyter/docker-stacks@96322b6 images/base-notebook/Dockerfile
+# Changes: BASE_IMAGE -> ${BASE_CONTAINER} (repo-internal UBI-rooted base); apt -> dnf;
+#          fonts-liberation -> liberation-fonts RPMs + fonts-conda-forge (conda-forge);
+#          pandoc apt -> pinned static binary; run-one dropped (no RESTARTABLE);
+#          mamba install -> pixi install --locked.
+#
+# ARG BASE_CONTAINER default: placeholder digest from the locally-built foundation image.
+# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use
+# the in-graph foundation target, so the digest value below is never pulled from a registry.
+# Replace with the pushed ghcr.io/nq-rdl/docker-stacks-foundation-ubi9 digest before merge.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:40eb4a7a176b9f40cf0905ae1735457293c3ebc1e0dd928706a9e81fb75c21dd
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER}
+
+ARG PANDOC_VERSION=3.10
+
+LABEL org.opencontainers.image.title="base-notebook-ubi9"
+LABEL org.opencontainers.image.description="Jupyter base-notebook (JupyterLab + Notebook + Hub single-user) on UBI9"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+USER root
+
+# Fonts for matplotlib/seaborn. UBI9 BaseOS ships liberation-mono-fonts + liberation-fonts-common
+# (sans/serif TTF families from conda-forge via fonts-conda-forge in pixi.toml cover the rest).
+# pandoc (for nbconvert -> html/pdf) as a pinned static binary (not in UBI BaseOS/AppStream).
+# run-one is intentionally dropped (RESTARTABLE unsupported).
+RUN dnf install -y --setopt=install_weak_deps=0 --nodocs liberation-mono-fonts liberation-fonts-common \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+RUN curl -fsSL -o /tmp/pandoc.tar.gz \
+        "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
+    && echo "e0f8af62d0f267d22baa5bcefe6d5dda3a097ccc60de794b759fe03159923244  /tmp/pandoc.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pandoc.tar.gz -C /usr/local --strip-components=1 \
+        "pandoc-${PANDOC_VERSION}/bin/pandoc" \
+    && rm -f /tmp/pandoc.tar.gz \
+    && pandoc --version
+
+USER ${NB_UID}
+
+# pixi.lock is a STANDALONE CUMULATIVE solve (all direct+transitive deps for linux-64).
+# `pixi install --locked` delta-applies to the inherited /opt/nb prefix: it ADDS new packages
+# and would REMOVE any parent package no longer a transitive dep — so each layer's pixi.toml
+# MUST list the full cumulative dependency set. Regenerate: `cd <imagedir> && pixi lock`.
+# PIXI_CACHE_DIR (=/tmp/pixi-cache) is inherited from the foundation ENV.
+COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
+RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && python -c 'import jupyter_core, notebook, jupyterlab' \
+    && jupyter server --generate-config \
+    && jupyter lab clean \
+    && rm -rf /tmp/pixi-cache \
+    && fix-permissions "${NB_PIXI_PROJECT}" \
+    && fix-permissions "/home/${NB_USER}"
+
+ENV JUPYTER_PORT=8888
+EXPOSE $JUPYTER_PORT
+CMD ["start-notebook.py"]
+
+COPY start-notebook.py start-notebook.sh start-singleuser.py start-singleuser.sh /usr/local/bin/
+COPY jupyter_server_config.py docker_healthcheck.py /etc/jupyter/
+
+USER root
+RUN fix-permissions /etc/jupyter/
+
+HEALTHCHECK --interval=3s --timeout=1s --start-period=3s --retries=3 \
+    CMD /etc/jupyter/docker_healthcheck.py || exit 1
+
+USER ${NB_UID}
+WORKDIR "${HOME}"
