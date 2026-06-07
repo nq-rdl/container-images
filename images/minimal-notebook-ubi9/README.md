@@ -18,5 +18,5 @@ Jupyter `minimal-notebook` on UBI9 via **pixi** (conda-forge). Chained on `base-
 | `xclip` | **Dropped** — X11 clipboard; irrelevant headless |
 | `run-one` | **Dropped** — no RPM |
 
-> **nbconvert PDF export:** nbconvert's default LaTeX engine is `xelatex`, which is **not** included (`texlive-core` ships `pdflatex` + `bibtex` only). To export PDF, point nbconvert at pdflatex, e.g.
-> `jupyter nbconvert --to pdf --LatexPreprocessor.latex_command='["pdflatex", "{filename}"]' notebook.ipynb`.
+> **nbconvert PDF export:** nbconvert's default LaTeX engine is `xelatex`, which is **not** included (`texlive-core` ships `pdflatex` + `bibtex` only). To export PDF, override the engine on `PDFExporter`, e.g.
+> `jupyter nbconvert --to pdf --PDFExporter.latex_command='["pdflatex", "{filename}"]' notebook.ipynb`.

@@ -15,3 +15,6 @@ Jupyter `scipy-notebook` on UBI9 via **pixi** (conda-forge). Chained on `minimal
 | `dvipng`, `cm-super` (inherited from minimal) | **Dropped** — absent from conda-forge, UBI9 base, and EPEL. matplotlib `text.usetex=True` is unsupported; the default `mathtext` renderer works. |
 
 > `pytables` imports in Python as `tables`. ffmpeg enables `matplotlib.animation.FFMpegWriter`.
+>
+> **nbconvert PDF export:** inherited from `minimal-notebook-ubi9` — `texlive-core` ships `pdflatex` + `bibtex` only (no `xelatex`, nbconvert's default). Override the engine to export PDF:
+> `jupyter nbconvert --to pdf --PDFExporter.latex_command='["pdflatex", "{filename}"]' notebook.ipynb`.

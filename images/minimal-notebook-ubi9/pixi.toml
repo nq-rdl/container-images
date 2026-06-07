@@ -16,7 +16,8 @@ notebook = ">=7.2.2"
 fonts-conda-forge = "*"
 # ── this layer (minimal-notebook-ubi9) ───────────────────────────────────
 # TeX Live via conda-forge: provides pdflatex + bibtex for nbconvert PDF export.
-# NOTE: conda-forge texlive-core does NOT ship xelatex; nbconvert PDF uses pdflatex.
+# NOTE: conda-forge texlive-core does NOT ship xelatex. nbconvert's default engine is
+# xelatex, so PDF export requires overriding PDFExporter.latex_command to pdflatex.
 # dvipng + cm-super are NOT available on conda-forge OR UBI9/EPEL and are NOT installed
 # (matplotlib text.usetex=True is unsupported; the default mathtext renderer works).
 texlive-core = "*"
