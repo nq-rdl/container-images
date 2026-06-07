@@ -36,8 +36,11 @@ USER ${NB_UID}
 
 # Cumulative pixi.toml: all ancestor deps + the full SciPy stack + ffmpeg.
 COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
+# Extended import smoke: covers the core SciPy stack plus packages with non-obvious import
+# names (pytables->tables, scikit-image->skimage) and every distinct ancestor-layer add, so a
+# silent lock-drift that drops any of them fails the build rather than shipping a broken image.
 RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
-    && python -c "import numpy, pandas, scipy, sklearn, matplotlib" \
+    && python -c "import numpy, pandas, scipy, sklearn, matplotlib, tables, skimage, h5py, numba, dask, statsmodels, sympy, seaborn" \
     && rm -rf /tmp/pixi-cache \
     && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"

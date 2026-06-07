@@ -38,6 +38,7 @@ USER ${NB_UID}
 # Cumulative pixi.toml: all ancestor deps + texlive-core for this layer.
 COPY --chown=${NB_UID}:${NB_GID} pixi.toml pixi.lock /opt/nb/
 RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
+    && pdflatex --version \
     && rm -rf /tmp/pixi-cache \
     && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"
