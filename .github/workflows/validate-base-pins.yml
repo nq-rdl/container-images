@@ -5,7 +5,7 @@ on:
     paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
   push:
     branches: [main]
-    paths: ['images/**', 'tests/**', 'pyproject.toml']
+    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
 
 permissions:
   contents: read
