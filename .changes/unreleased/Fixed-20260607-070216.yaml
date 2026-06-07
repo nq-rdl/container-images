@@ -1,0 +1,3 @@
+kind: Fixed
+body: Repin the UBI9 datascience chain (base-notebook, minimal-notebook, scipy-notebook) BASE_CONTAINER digests to their published GHCR images, and add a crane-based reachability guard (pixi task policy-check-chained-bases-reachable + validate-base-pins CI) asserting chained base pins resolve in GHCR and cover declared platforms.
+time: 2026-06-07T07:02:16.000000+00:00
