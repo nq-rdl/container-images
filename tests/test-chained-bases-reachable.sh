@@ -8,9 +8,11 @@
 # that do not actually exist in the registry — the failure mode a standalone
 # `docker build images/scipy-notebook-ubi9` hits as `manifest unknown`.
 #
-# Tooling: crane (declared in pyproject.toml [tool.pixi.dependencies]; CI installs it via
-# imjasonh/setup-crane) and jq. Platforms are parsed from image.yaml with awk to avoid a
-# yq-flavour dependency; image.yaml uses a simple top-level `platforms:` block list.
+# Tooling: crane and jq (both declared in pyproject.toml [tool.pixi.dependencies]; run locally
+# via `pixi run policy-check-chained-bases-reachable`). In CI this script runs in
+# .github/workflows/validate-base-pins.yml, where crane is provided by imjasonh/setup-crane.
+# Platforms are parsed from image.yaml with awk to avoid a yq-flavour dependency; image.yaml
+# uses a simple top-level `platforms:` block list.
 #
 # Error-class-specific semantics (so the bootstrap skip cannot mask real failures):
 #   * tag not published yet (404 / MANIFEST_UNKNOWN / NAME_UNKNOWN) -> SKIP (bootstrap)
@@ -30,16 +32,21 @@ if ! command -v crane >/dev/null 2>&1; then
   echo "      run 'pixi install' (crane is a declared dependency) or use the CI job."
   exit 0
 fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "SKIP: 'jq' not on PATH — chained-base reachability not verified."
+  echo "      run 'pixi install' (jq is a declared dependency) or use the CI job."
+  exit 0
+fi
 
 # Does a crane error blob indicate an absent tag/repo (vs auth/network/other)?
 is_absent_error() {
-  grep -qiE 'MANIFEST_UNKNOWN|NAME_UNKNOWN|not found|status code 404|: 404' <<<"$1"
+  grep -qiE 'MANIFEST_UNKNOWN|NAME_UNKNOWN|status code 404|: 404' <<<"$1"
 }
 
 # Read a simple top-level `platforms:` block list from an image.yaml (no yq dependency).
 read_platforms() {
   awk '
-    /^platforms:[[:space:]]*$/ { inblk=1; next }
+    /^platforms:[[:space:]]*(#.*)?$/ { inblk=1; next }
     inblk && /^[^[:space:]#]/  { inblk=0 }
     inblk && /^[[:space:]]*-[[:space:]]*/ {
       sub(/^[[:space:]]*-[[:space:]]*/, ""); gsub(/["[:space:]]/, "")
@@ -53,7 +60,7 @@ for cf in images/*/Containerfile; do
   grep -qE '^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER' "$cf" || continue
 
   val=$(grep -E '^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=' "$cf" | tail -1 \
-        | sed -E 's/^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=//; s/[[:space:]]+#.*$//; s/[[:space:]]*$//')
+        | sed -E 's/^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=//; s/[[:space:]]+#.*$//; s/[[:space:]]*$//' || true)
   if [[ "$val" != *"@sha256:"* ]]; then
     fail "$cf: BASE_CONTAINER='$val' is not digest-pinned"; continue
   fi
