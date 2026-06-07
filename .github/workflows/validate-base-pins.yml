@@ -2,10 +2,10 @@ name: Validate Base Pins
 
 on:
   pull_request:
-    paths: ['images/**', '.github/workflows/validate-base-pins.yml']
+    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
   push:
     branches: [main]
-    paths: ['images/**']
+    paths: ['images/**', 'tests/**', 'pyproject.toml']
 
 permissions:
   contents: read
@@ -50,3 +50,6 @@ jobs:
             done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
           done
           exit "$rc"
+
+      - name: Assert chained ARG BASE_CONTAINER pins resolve and cover declared platforms
+        run: bash tests/test-chained-bases-reachable.sh
