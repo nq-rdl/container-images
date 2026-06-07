@@ -34,6 +34,13 @@ fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; PASSES=$((PASSES + 1)); }
 skip() { echo "SKIP: $1"; SKIPS=$((SKIPS + 1)); }
 
+# The per-image reachability probe (step 2 below) buffers crane's stderr in a tempfile. The loop
+# rm -f's it on both branches, but an interrupt (CI timeout SIGTERM, Ctrl-C) between mktemp and the
+# rm could otherwise leak it — so register a belt-and-suspenders EXIT trap. ${errf:-} is set -u safe
+# before the first assignment and after the trailing rm.
+errf=""
+trap 'rm -f "${errf:-}"' EXIT
+
 # Tooling presence. CHAINED_BASES_STRICT=1 (set by the CI step) turns missing tooling into a
 # hard FAIL instead of a SKIP, so a broken setup-crane action or a jq-less runner cannot make
 # the job green without verifying anything. Locally (unset) absence is a loud SKIP for offline
@@ -150,7 +157,17 @@ if [ "$FAILURES" -gt 0 ]; then
   exit 1
 fi
 if [ "$PASSES" -eq 0 ]; then
-  echo "No chained bases verified (${SKIPS} skipped — bootstrap or tooling absent); nothing asserted"
+  # Tooling absence can't reach here — require_tool exits before the loop — so the only way to land
+  # on PASSES=0 is every chained image bootstrap-skipping, or no chained image existing at all.
+  msg="No chained bases verified (${SKIPS} skipped: tag(s) not published yet, or no chained images); nothing asserted"
+  # In CI (strict) a fully-skipped run asserts nothing. Surface it as a warning annotation so a green
+  # job that verified zero pins is visible, while still allowing a genuine all-bootstrap state (no
+  # images published yet) to pass — per the documented bootstrap-skip design. Exit code is unchanged.
+  if [ -n "${CHAINED_BASES_STRICT:-}" ] && [ "$SKIPS" -gt 0 ]; then
+    echo "::warning::${msg}"
+  else
+    echo "${msg}"
+  fi
   exit 0
 fi
 echo "All ${PASSES} chained base(s) reachable and platform-covered (${SKIPS} skipped)"
