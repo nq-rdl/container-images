@@ -9,7 +9,7 @@
 #          UBI9 base, and EPEL — usetex=True unsupported); xclip DROPPED (headless, no X11);
 #          run-one DROPPED (no RPM). Rprofile.site + setup-scripts vendored from upstream.
 #
-ARG BASE_CONTAINER=ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0@sha256:34a7714369d3cecaa8b9f7cd091e418577114f0ac7d1d9c76a502a5fa1f4b856
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/base-notebook-ubi9:2026.6.0@sha256:86e8ef3d4ad89e0814f42a651e8d49a76c62cc4ee7c1b980efe6c89074a461e4
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}
 
