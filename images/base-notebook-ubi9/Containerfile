@@ -8,10 +8,10 @@
 #          mamba install -> pixi install --locked.
 #
 # ARG BASE_CONTAINER default: digest of the published ghcr.io/nq-rdl/docker-stacks-foundation-ubi9.
-# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use the
-# in-graph foundation target, so the digest below is never pulled from a registry — it is used
-# only by a standalone `docker build images/base-notebook-ubi9`. Reachability of this pin is
-# guarded by tests/test-chained-bases-reachable.sh.
+# In a bake build the `contexts` + `args` wiring in docker-bake.hcl overrides this with the
+# in-graph foundation target, so the digest below is not resolved from the registry. It is
+# pulled from the registry only by a standalone `docker build images/base-notebook-ubi9`.
+# Reachability of this pin is guarded by tests/test-chained-bases-reachable.sh.
 ARG BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:cd76a3416f12aae3752b4034241bfedd553d7277b3ee25f7ba45ecac562d75af
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}

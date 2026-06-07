@@ -8,10 +8,10 @@
 #          -> pixi install --locked. No extra script files copied at this layer (only pixi.toml + pixi.lock).
 #
 # ARG BASE_CONTAINER default: digest of the published ghcr.io/nq-rdl/minimal-notebook-ubi9.
-# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use the
-# in-graph minimal-notebook target, so the digest below is never pulled from a registry — it
-# is used only by a standalone `docker build images/scipy-notebook-ubi9`. Reachability of this
-# pin is guarded by tests/test-chained-bases-reachable.sh.
+# In a bake build the `contexts` + `args` wiring in docker-bake.hcl overrides this with the
+# in-graph minimal-notebook target, so the digest below is not resolved from the registry. It
+# is pulled from the registry only by a standalone `docker build images/scipy-notebook-ubi9`.
+# Reachability of this pin is guarded by tests/test-chained-bases-reachable.sh.
 ARG BASE_CONTAINER=ghcr.io/nq-rdl/minimal-notebook-ubi9:2026.6.0@sha256:46e14db9663ef49c9f3fa62ff7b57d06358f41878ca53ba899adac941a1e2184
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}
