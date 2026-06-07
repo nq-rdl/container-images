@@ -1,0 +1,51 @@
+[workspace]
+name = "scipy-notebook"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+# ── inherited: foundation ──
+python = "3.12.*"
+pip = "*"
+jupyter_core = "*"
+# ── inherited: base-notebook ──
+jupyterhub-singleuser = "*"
+jupyterlab = "*"
+nbclassic = "*"
+notebook = ">=7.2.2"
+fonts-conda-forge = "*"
+# ── inherited: minimal-notebook ──
+texlive-core = "*"
+# ── this layer: scipy-notebook ──
+altair = "*"
+beautifulsoup4 = "*"
+blas = { version = "*", build = "openblas" }   # OpenBLAS variant (exact build string)
+bokeh = "*"
+bottleneck = "*"
+cloudpickle = "*"
+cython = "*"
+dask = "*"
+dill = "*"
+ffmpeg = "*"               # matplotlib animation; conda-forge (NOT RPM Fusion/EPEL)
+h5py = "*"
+ipympl = "*"
+ipywidgets = "*"
+jupyterlab-git = "*"       # noarch on conda-forge; resolves for linux-64
+matplotlib-base = "*"
+numba = "*"
+numexpr = "*"
+numpy = "*"
+openpyxl = "*"
+pandas = "*"
+patsy = "*"
+protobuf = "*"
+pytables = "*"             # python import name is `tables`
+scikit-image = "*"
+scikit-learn = "*"
+scipy = "*"
+seaborn = "*"
+sqlalchemy = "*"
+statsmodels = "*"
+sympy = "*"
+widgetsnbextension = "*"
+xlrd = "*"

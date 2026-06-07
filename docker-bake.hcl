@@ -4,7 +4,7 @@ variable "TAG"      { default = "2026.6.0" }
 variable "MINOR"    { default = "2026.6" }
 
 group "datascience" {
-  targets = ["foundation", "base-notebook"]
+  targets = ["foundation", "base-notebook", "minimal-notebook", "scipy-notebook"]
 }
 
 target "foundation" {
@@ -39,4 +39,42 @@ target "base-notebook" {
   ]
   cache-from = ["type=gha,scope=base-notebook-ubi9"]
   cache-to   = ["type=gha,scope=base-notebook-ubi9,mode=max"]
+}
+
+target "minimal-notebook" {
+  context    = "images/minimal-notebook-ubi9"
+  dockerfile = "Containerfile"
+  platforms  = ["linux/amd64"]
+  contexts = {
+    "ghcr.io/nq-rdl/base-notebook-ubi9" = "target:base-notebook"
+  }
+  args = {
+    BASE_CONTAINER = "ghcr.io/nq-rdl/base-notebook-ubi9"
+  }
+  tags = [
+    "${REGISTRY}/minimal-notebook-ubi9:${TAG}",
+    "${REGISTRY}/minimal-notebook-ubi9:${MINOR}",
+    "${REGISTRY}/minimal-notebook-ubi9:latest",
+  ]
+  cache-from = ["type=gha,scope=minimal-notebook-ubi9"]
+  cache-to   = ["type=gha,scope=minimal-notebook-ubi9,mode=max"]
+}
+
+target "scipy-notebook" {
+  context    = "images/scipy-notebook-ubi9"
+  dockerfile = "Containerfile"
+  platforms  = ["linux/amd64"]
+  contexts = {
+    "ghcr.io/nq-rdl/minimal-notebook-ubi9" = "target:minimal-notebook"
+  }
+  args = {
+    BASE_CONTAINER = "ghcr.io/nq-rdl/minimal-notebook-ubi9"
+  }
+  tags = [
+    "${REGISTRY}/scipy-notebook-ubi9:${TAG}",
+    "${REGISTRY}/scipy-notebook-ubi9:${MINOR}",
+    "${REGISTRY}/scipy-notebook-ubi9:latest",
+  ]
+  cache-from = ["type=gha,scope=scipy-notebook-ubi9"]
+  cache-to   = ["type=gha,scope=scipy-notebook-ubi9,mode=max"]
 }
