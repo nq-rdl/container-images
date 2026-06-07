@@ -5,7 +5,7 @@
 # Changes: BASE_IMAGE -> ${BASE_CONTAINER}; apt -> dnf; build-essential -> gcc gcc-c++ make;
 #          ffmpeg -> conda-forge::ffmpeg (no RPM Fusion/EPEL); dvipng + cm-super DROPPED
 #          (absent from conda-forge, UBI9, EPEL; usetex=True unsupported); all conda installs
-#          -> pixi install --locked. No COPY (no scripts at this layer).
+#          -> pixi install --locked. No extra script files copied at this layer (only pixi.toml + pixi.lock).
 #
 # ARG BASE_CONTAINER default: placeholder digest from the locally-built minimal-notebook image.
 # In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use the
@@ -42,5 +42,4 @@ RUN pixi install --locked --manifest-path /opt/nb/pixi.toml \
     && fix-permissions "${NB_PIXI_PROJECT}" \
     && fix-permissions "/home/${NB_USER}"
 
-USER ${NB_UID}
 WORKDIR "${HOME}"

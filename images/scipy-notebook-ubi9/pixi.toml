@@ -34,6 +34,7 @@ jupyterlab-git = "*"       # noarch on conda-forge; resolves for linux-64
 matplotlib-base = "*"
 numba = "*"
 numexpr = "*"
+numpy = "*"
 openpyxl = "*"
 pandas = "*"
 patsy = "*"
