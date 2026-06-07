@@ -19,6 +19,7 @@
 #   * tag exists but pinned digest unreachable                      -> FAIL (placeholder/stale)
 #   * any other crane error (auth / rate-limit / network)           -> FAIL (fail-closed)
 #   * crane or jq absent (offline dev)                              -> SKIP loudly, exit 0
+#       ...unless CHAINED_BASES_STRICT is set (CI does), then       -> FAIL (no silent green)
 set -euo pipefail
 
 # Must run from the repo root: the images/*/Containerfile glob below is repo-root-relative.
@@ -33,18 +34,27 @@ fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; PASSES=$((PASSES + 1)); }
 skip() { echo "SKIP: $1"; SKIPS=$((SKIPS + 1)); }
 
-if ! command -v crane >/dev/null 2>&1; then
-  echo "SKIP: 'crane' not on PATH — chained-base reachability not verified."
-  echo "      run 'pixi install' (crane is a declared dependency) or use the CI job."
+# Tooling presence. CHAINED_BASES_STRICT=1 (set by the CI step) turns missing tooling into a
+# hard FAIL instead of a SKIP, so a broken setup-crane action or a jq-less runner cannot make
+# the job green without verifying anything. Locally (unset) absence is a loud SKIP for offline
+# dev. This governs *tooling* absence only — the per-image bootstrap SKIP (unpublished tag)
+# stays a SKIP even under strict mode, since a not-yet-published image genuinely cannot be
+# reachability-checked.
+require_tool() {  # $1: tool name
+  command -v "$1" >/dev/null 2>&1 && return 0
+  if [ -n "${CHAINED_BASES_STRICT:-}" ]; then
+    echo "ERROR: '$1' not on PATH and CHAINED_BASES_STRICT is set — refusing to skip in CI."; exit 1
+  fi
+  echo "SKIP: '$1' not on PATH — chained-base reachability not verified."
+  echo "      run 'pixi install' ($1 is a declared dependency) or use the CI job."
   exit 0
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "SKIP: 'jq' not on PATH — chained-base reachability not verified."
-  echo "      run 'pixi install' (jq is a declared dependency) or use the CI job."
-  exit 0
-fi
+}
+require_tool crane
+require_tool jq
 
 # Does a crane error blob indicate an absent tag/repo (vs auth/network/other)?
+# GHCR returns "MANIFEST_UNKNOWN: manifest unknown" for an absent tag on an existing repo
+# (verified against ghcr.io/nq-rdl); anything else (DENIED, auth, network) falls through to FAIL.
 is_absent_error() {
   grep -qiE 'MANIFEST_UNKNOWN|NAME_UNKNOWN|status code 404|: 404' <<<"$1"
 }
@@ -80,15 +90,20 @@ for cf in images/*/Containerfile; do
   digest_ref="${repo}@${digest}"   # crane rejects repo:tag@digest; address by repo@digest
 
   dir=$(dirname "$cf"); yaml="${dir}/image.yaml"
-  WANT=()
-  if [ -f "$yaml" ]; then
-    mapfile -t WANT < <(read_platforms "$yaml")
-    # Fail loudly if image.yaml declares platforms we could not parse (e.g. flow-sequence
-    # syntax) instead of silently defaulting to linux/amd64 and under-checking coverage.
-    if [ "${#WANT[@]}" -eq 0 ] && grep -qE '^platforms:' "$yaml"; then
-      fail "$cf: ${yaml} has a 'platforms:' key but none parsed (only block-sequence supported)"; continue
-    fi
+  # A chained image must declare its platforms in a sibling image.yaml. Missing file -> FAIL
+  # (matches the yq-based step in validate-base-pins.yml); silently defaulting would under-check.
+  if [ ! -f "$yaml" ]; then
+    fail "$cf: missing sibling image.yaml — cannot determine declared platforms"; continue
   fi
+  WANT=()
+  mapfile -t WANT < <(read_platforms "$yaml")
+  # Fail loudly if image.yaml declares platforms we could not parse (e.g. flow-sequence syntax)
+  # instead of silently defaulting to linux/amd64 and under-checking coverage.
+  if [ "${#WANT[@]}" -eq 0 ] && grep -qE '^platforms:' "$yaml"; then
+    fail "$cf: ${yaml} has a 'platforms:' key but none parsed (only block-sequence supported)"; continue
+  fi
+  # image.yaml present but with no platforms: key -> default linux/amd64 (matches the yq step's
+  # `(.platforms // ["linux/amd64"])`).
   [ "${#WANT[@]}" -gt 0 ] || WANT=("linux/amd64")
 
   # 1) Tag existence probe (bootstrap detection). Capture stderr only:
@@ -101,14 +116,21 @@ for cf in images/*/Containerfile; do
     fail "$cf: querying ${repo_tag} failed: ${err}"; continue
   fi
 
-  # 2) Pinned-digest reachability (placeholder/stale detection).
-  if ! mfst=$(crane manifest "$digest_ref" 2>&1); then
-    fail "$cf: pinned digest ${digest} unreachable in ${repo} (placeholder/stale): ${mfst}"; continue
+  # 2) Pinned-digest reachability (placeholder/stale detection). Capture stdout (the manifest
+  #    JSON) and stderr separately: a stray stderr line on success (e.g. a future crane warning)
+  #    must not be merged into the JSON handed to jq below.
+  errf=$(mktemp)
+  if ! mfst=$(crane manifest "$digest_ref" 2>"$errf"); then
+    fail "$cf: pinned digest ${digest} unreachable in ${repo} (placeholder/stale): $(cat "$errf")"
+    rm -f "$errf"; continue
   fi
+  rm -f "$errf"
 
   # 3) Platform coverage: must be a non-empty image index covering every WANT platform.
   # Note: platforms are compared as "os/arch"; the OCI `variant` field (e.g. arm64/v8) is not
   # included — adequate while every image.yaml declares two-part platforms (all linux/amd64).
+  # This jq filter is intentionally identical to the FROM-pin step in validate-base-pins.yml;
+  # keep the two in sync if the OCI index handling changes.
   if ! have=$(jq -er '
         if (.manifests | type) == "array" and (.manifests | length) > 0
         then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ")
