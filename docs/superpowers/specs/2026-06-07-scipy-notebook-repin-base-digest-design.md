@@ -152,3 +152,21 @@ A `changie` `Fixed` fragment:
 
 writing-plans → subagent-driven-development, each task TDD (red → green →
 refactor), then `requesting-code-review` before the PR.
+
+## Addendum (execution): whole-chain reconcile
+
+On its first run, the new reachability guard surfaced that the placeholder
+problem was **not unique to scipy** — the entire chain needed reconciling:
+
+| Source → parent | Was pinned | State | Repinned to |
+|---|---|---|---|
+| scipy → minimal | `640ebba9` | placeholder (unreachable) | `46e14db966` |
+| base-notebook → foundation | `40eb4a7a` | placeholder (**unreachable**) | `cd76a341` |
+| minimal → base-notebook | `34a77143` | reachable but **stale** (orphaned non-tag digest; GC-risk) | `86e8ef3d` |
+
+With user approval, the PR was expanded from "repin scipy" to reconciling all
+three chained bases to their current published GHCR digests. This is the guard
+working as intended: it converted a silent, latent multi-image breakage into a
+visible signal on the first run. The `minimal` pin passed reachability (D5) but
+was repinned anyway because its old digest is not tag-referenced and would break
+standalone builds if garbage-collected.

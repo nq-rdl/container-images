@@ -433,3 +433,14 @@ Do **not** push. Pushing triggers pre-push hooks (`smoke-test.sh` full build + k
 - **Placeholder scan:** none — full script, exact edits, exact commands and expected outputs throughout. ✓
 - **Type/name consistency:** task name `policy-check-chained-bases-reachable`, script path `tests/test-chained-bases-reachable.sh`, and digest `sha256:46e14db966…` are identical across Tasks 1–6. ✓
 - **Tooling consistency:** script depends only on crane + jq + awk/grep/sed; crane+jq declared in Task 1; CI provides crane (setup-crane) + jq/awk (preinstalled). No yq dependency. ✓
+
+## Execution note: scope expanded to the whole chain
+
+Task 3 above repins only `scipy-notebook-ubi9`. During execution the new guard
+revealed that `base-notebook-ubi9` (foundation pin `40eb4a7a`, **unreachable**)
+and `minimal-notebook-ubi9` (base pin `34a77143`, reachable but **stale/GC-risk**)
+also needed reconciling. With user approval the work expanded to repin all three
+to current published digests: base→foundation `cd76a341`, minimal→base
+`86e8ef3d`, scipy→minimal `46e14db966`. A code-review pass also hardened the
+guard (`|| true` on the arg parse, a `jq` pre-flight skip, a tighter
+absent-tag classifier, and an awk inline-comment fix). See the spec addendum.
