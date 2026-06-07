@@ -7,11 +7,12 @@
 #          pandoc apt -> pinned static binary; run-one dropped (no RESTARTABLE);
 #          mamba install -> pixi install --locked.
 #
-# ARG BASE_CONTAINER default: placeholder digest from the locally-built foundation image.
-# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use
-# the in-graph foundation target, so the digest value below is never pulled from a registry.
-# Replace with the pushed ghcr.io/nq-rdl/docker-stacks-foundation-ubi9 digest before merge.
-ARG BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:40eb4a7a176b9f40cf0905ae1735457293c3ebc1e0dd928706a9e81fb75c21dd
+# ARG BASE_CONTAINER default: digest of the published ghcr.io/nq-rdl/docker-stacks-foundation-ubi9.
+# In bake builds the `contexts` + `args` wiring in docker-bake.hcl overrides this to use the
+# in-graph foundation target, so the digest below is never pulled from a registry — it is used
+# only by a standalone `docker build images/base-notebook-ubi9`. Reachability of this pin is
+# guarded by tests/test-chained-bases-reachable.sh.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/docker-stacks-foundation-ubi9:2026.6.0@sha256:cd76a3416f12aae3752b4034241bfedd553d7277b3ee25f7ba45ecac562d75af
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}
 
