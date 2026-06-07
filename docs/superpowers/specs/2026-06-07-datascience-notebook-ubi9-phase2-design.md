@@ -78,6 +78,11 @@ CI `bake` job (`docker buildx bake … datascience`) then builds the four-image 
 `discover` matrix-exclude, `smoke-test.sh`/`trivy-scan.sh` bake-detection, and the chained-base
 policy all auto-handle the new images. **No other repo files change.**
 
+> **Correction (found during implementation):** `.github/workflows/build.yml` was also updated — the
+> `bake` job's per-image Trivy SARIF scan steps and the convenience-alias publish loop are enumerated
+> per image, not auto-derived from the bake group, so both new images had to be added there. Phase 3
+> should expect the same `build.yml` edit for `datascience-notebook-ubi9`.
+
 ## 6. Versioning, smoke, rollout
 
 - Tags: `2026.6.0` / `2026.6` / `latest` (same CalVer line).

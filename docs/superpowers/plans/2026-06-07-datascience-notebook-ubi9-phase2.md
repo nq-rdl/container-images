@@ -62,6 +62,12 @@ Start Phase 2 from a fresh branch off the post-merge `main` (e.g. `feat/datascie
 
 No policy/CI/script files change (verified in Task 1 + Task 8).
 
+> **Correction (found during implementation):** `.github/workflows/build.yml` *did* require changes.
+> The `bake` job's per-image Trivy SARIF steps and the suffix-less alias-publish loop are
+> enumerated per image (foundation + base-notebook only) and were extended to cover the two new
+> images. The matrix/discover/smoke-detect/bake-group machinery auto-handles bake images; these two
+> enumerated steps do not. Phase 3 should expect the same `build.yml` edit for `datascience-notebook`.
+
 ---
 
 ## Task 1: Preflight — confirm Phase-1 infra auto-handles new bake images (read-only)
@@ -523,7 +529,12 @@ Expected: all exit 0.
 
 ## Task 8: Verify no policy/CI/script changes are needed (read-only)
 
-- [ ] **Step 1:** `docker buildx bake --file docker-bake.hcl --print datascience | jq '.target | keys'` → four targets (the CI `bake` job builds the `datascience` group verbatim — no `build.yml` change).
+> **Correction (found during implementation):** `build.yml` *was* changed — the per-image Trivy
+> SARIF steps and the alias-publish loop are enumerated per image and had to be extended to the two
+> new images (see the §Task 7 / PR description). Steps 2–4 below (matrix exclude, smoke-detect,
+> bake-print tags) remain accurate and auto-handle the new images; only the enumerated CI steps did not.
+
+- [ ] **Step 1:** `docker buildx bake --file docker-bake.hcl --print datascience | jq '.target | keys'` → four targets (the CI `bake` job builds the `datascience` group verbatim — but the per-image Trivy + alias-publish steps in `build.yml` are enumerated and DID require an edit).
 - [ ] **Step 2:** `for d in images/minimal-notebook-ubi9 images/scipy-notebook-ubi9; do yq -e '.bake_target' "$d/image.yaml" >/dev/null && echo "$d excluded from matrix OK"; done` → both OK (the `discover` job auto-excludes them).
 - [ ] **Step 3:** `grep -lR --include=image.yaml 'bake_target:' images/ | wc -l` → 4 (smoke-test.sh auto-detects them).
 - [ ] **Step 4:** `docker buildx bake --file docker-bake.hcl --print scipy-notebook | jq '.target."scipy-notebook".tags'` → the three `:2026.6.0/2026.6/latest` tags trivy-scan.sh will scan.
