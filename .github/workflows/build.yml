@@ -436,13 +436,45 @@ jobs:
           sarif_file: trivy-base-notebook-ubi9.sarif
           category: trivy-base-notebook-ubi9
 
+      - name: Trivy scan (minimal-notebook)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/minimal-notebook-ubi9:${{ env.TAG }}
+          format: sarif
+          output: trivy-minimal-notebook-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (minimal-notebook)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-minimal-notebook-ubi9.sarif
+          category: trivy-minimal-notebook-ubi9
+
+      - name: Trivy scan (scipy-notebook)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/scipy-notebook-ubi9:${{ env.TAG }}
+          format: sarif
+          output: trivy-scipy-notebook-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (scipy-notebook)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-scipy-notebook-ubi9.sarif
+          category: trivy-scipy-notebook-ubi9
+
       - name: Publish convenience aliases
         if: github.event_name != 'pull_request'
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          for name in docker-stacks-foundation-ubi9 base-notebook-ubi9; do
+          for name in docker-stacks-foundation-ubi9 base-notebook-ubi9 minimal-notebook-ubi9 scipy-notebook-ubi9; do
             [[ "$name" =~ ^(.+)-ubi([0-9]+)$ ]] || continue
             alias="${BASH_REMATCH[1]}"
             src="ghcr.io/${OWNER}/${name}"
