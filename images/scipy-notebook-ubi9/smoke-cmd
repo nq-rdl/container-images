@@ -1,1 +1,1 @@
-python -c "import numpy, pandas, scipy, sklearn, matplotlib"
+jupyter --version
