@@ -51,5 +51,11 @@ jobs:
           done
           exit "$rc"
 
+      - name: Assert chained ARG BASE_CONTAINER pins are digest-pinned (format, offline)
+        run: bash tests/test-chained-bases-pinned.sh
+
+      - name: Ensure jq is installed (reachability guard dependency)
+        run: command -v jq >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y jq)
+
       - name: Assert chained ARG BASE_CONTAINER pins resolve and cover declared platforms
         run: bash tests/test-chained-bases-reachable.sh

@@ -10,21 +10,27 @@
 #
 # Tooling: crane and jq (both declared in pyproject.toml [tool.pixi.dependencies]; run locally
 # via `pixi run policy-check-chained-bases-reachable`). In CI this script runs in
-# .github/workflows/validate-base-pins.yml, where crane is provided by imjasonh/setup-crane.
-# Platforms are parsed from image.yaml with awk to avoid a yq-flavour dependency; image.yaml
-# uses a simple top-level `platforms:` block list.
+# .github/workflows/validate-base-pins.yml, where crane is provided by imjasonh/setup-crane and
+# jq is ensured by an explicit step. Platforms are parsed from image.yaml with awk to avoid a
+# yq-flavour dependency; image.yaml uses a simple top-level `platforms:` block list.
 #
 # Error-class-specific semantics (so the bootstrap skip cannot mask real failures):
 #   * tag not published yet (404 / MANIFEST_UNKNOWN / NAME_UNKNOWN) -> SKIP (bootstrap)
 #   * tag exists but pinned digest unreachable                      -> FAIL (placeholder/stale)
 #   * any other crane error (auth / rate-limit / network)           -> FAIL (fail-closed)
-#   * crane absent entirely (offline dev)                           -> SKIP loudly, exit 0
+#   * crane or jq absent (offline dev)                              -> SKIP loudly, exit 0
 set -euo pipefail
+
+# Must run from the repo root: the images/*/Containerfile glob below is repo-root-relative.
+# Without this guard, invoking from another directory would match nothing and exit 0 — a
+# silent false pass. CI and the pixi task already invoke this from the repo root.
+[ -d images ] || { echo "ERROR: run from the repo root (images/ not found from $(pwd))"; exit 1; }
 
 FAILURES=0
 SKIPS=0
+PASSES=0
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
-pass() { echo "PASS: $1"; }
+pass() { echo "PASS: $1"; PASSES=$((PASSES + 1)); }
 skip() { echo "SKIP: $1"; SKIPS=$((SKIPS + 1)); }
 
 if ! command -v crane >/dev/null 2>&1; then
@@ -44,12 +50,15 @@ is_absent_error() {
 }
 
 # Read a simple top-level `platforms:` block list from an image.yaml (no yq dependency).
+# Only block-sequence syntax is supported (a `platforms:` line followed by `- value` items);
+# inline flow-sequence (`platforms: [a, b]`) is NOT parsed. The caller fails loudly when a
+# `platforms:` key is present but nothing parses, rather than silently under-checking.
 read_platforms() {
   awk '
     /^platforms:[[:space:]]*(#.*)?$/ { inblk=1; next }
     inblk && /^[^[:space:]#]/  { inblk=0 }
     inblk && /^[[:space:]]*-[[:space:]]*/ {
-      sub(/^[[:space:]]*-[[:space:]]*/, ""); gsub(/["[:space:]]/, "")
+      sub(/^[[:space:]]*-[[:space:]]*/, ""); sub(/#.*$/, ""); gsub(/["[:space:]]/, "")
       if ($0 != "") print
     }
   ' "$1"
@@ -72,10 +81,19 @@ for cf in images/*/Containerfile; do
 
   dir=$(dirname "$cf"); yaml="${dir}/image.yaml"
   WANT=()
-  [ -f "$yaml" ] && mapfile -t WANT < <(read_platforms "$yaml")
+  if [ -f "$yaml" ]; then
+    mapfile -t WANT < <(read_platforms "$yaml")
+    # Fail loudly if image.yaml declares platforms we could not parse (e.g. flow-sequence
+    # syntax) instead of silently defaulting to linux/amd64 and under-checking coverage.
+    if [ "${#WANT[@]}" -eq 0 ] && grep -qE '^platforms:' "$yaml"; then
+      fail "$cf: ${yaml} has a 'platforms:' key but none parsed (only block-sequence supported)"; continue
+    fi
+  fi
   [ "${#WANT[@]}" -gt 0 ] || WANT=("linux/amd64")
 
-  # 1) Tag existence probe (bootstrap detection). Capture stderr only.
+  # 1) Tag existence probe (bootstrap detection). Capture stderr only:
+  #    `2>&1 >/dev/null` order is intentional — point stderr at the $() capture first, THEN
+  #    send stdout to /dev/null. Reversing it (`>/dev/null 2>&1`) would discard the error text.
   if ! err=$(crane manifest "$repo_tag" 2>&1 >/dev/null); then
     if is_absent_error "$err"; then
       skip "$cf: ${repo_tag} not published yet (bootstrap) — reachability deferred"; continue
@@ -89,11 +107,13 @@ for cf in images/*/Containerfile; do
   fi
 
   # 3) Platform coverage: must be a non-empty image index covering every WANT platform.
+  # Note: platforms are compared as "os/arch"; the OCI `variant` field (e.g. arm64/v8) is not
+  # included — adequate while every image.yaml declares two-part platforms (all linux/amd64).
   if ! have=$(jq -er '
         if (.manifests | type) == "array" and (.manifests | length) > 0
         then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ")
         else error("not a non-empty image index") end' <<<"$mfst" 2>/dev/null); then
-    fail "$cf: ${digest_ref} is not a non-empty image index"; continue
+    fail "$cf: ${digest_ref} is not a non-empty image index (crane output: ${mfst})"; continue
   fi
   miss=0
   for p in "${WANT[@]}"; do
@@ -104,8 +124,12 @@ done
 
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
-  echo "${FAILURES} chained base(s) FAILED reachability/platform check (${SKIPS} skipped)"
+  echo "${FAILURES} chained base(s) FAILED reachability/platform check (${PASSES} passed, ${SKIPS} skipped)"
   exit 1
 fi
-echo "All chained bases reachable and platform-covered (${SKIPS} skipped)"
+if [ "$PASSES" -eq 0 ]; then
+  echo "No chained bases verified (${SKIPS} skipped — bootstrap or tooling absent); nothing asserted"
+  exit 0
+fi
+echo "All ${PASSES} chained base(s) reachable and platform-covered (${SKIPS} skipped)"
 exit 0

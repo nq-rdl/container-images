@@ -5,6 +5,11 @@
 # `FROM ${BASE_CONTAINER}` stage-ref form used by chained images.
 set -euo pipefail
 
+# Must run from the repo root: the images/*/Containerfile glob below is repo-root-relative.
+# Without this guard, invoking from another directory would match nothing and exit 0 — a
+# silent false pass.
+[ -d images ] || { echo "ERROR: run from the repo root (images/ not found from $(pwd))"; exit 1; }
+
 FAILURES=0
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "PASS: $1"; }

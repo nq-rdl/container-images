@@ -7,7 +7,7 @@
 
 ## Problem
 
-`images/scipy-notebook-ubi9/Containerfile:14` pins its parent via a **placeholder
+`images/scipy-notebook-ubi9/Containerfile:15` pins its parent via a **placeholder
 digest** taken from a *locally-built* `minimal-notebook-ubi9` image:
 
 ```dockerfile
@@ -40,7 +40,7 @@ next chained image.
 
 ## Goals
 
-1. Repin `Containerfile:14` to the authoritative published digest.
+1. Repin `Containerfile:15` to the authoritative published digest.
 2. Add a real red→green test asserting chained `ARG BASE_CONTAINER` pins
    **resolve in GHCR and cover declared platforms** — a permanent regression
    guard against placeholder/stale chained pins.
@@ -69,7 +69,7 @@ next chained image.
 
 ### 1. Repin (the core of #45)
 
-`images/scipy-notebook-ubi9/Containerfile:14`:
+`images/scipy-notebook-ubi9/Containerfile:15`:
 
 ```diff
 -ARG BASE_CONTAINER=ghcr.io/nq-rdl/minimal-notebook-ubi9:2026.6.0@sha256:640ebba9ab2959fd6489f0b0e30b0434bfa5b3308b9e478ee766e1546e448834
@@ -123,14 +123,14 @@ A `changie` `Fixed` fragment:
 | Step | State | Evidence |
 |------|-------|----------|
 | Write `test-chained-bases-reachable.sh`, run against current tree | **RED** | scipy pin `640ebba9…` → `manifest unknown` while tag exists → FAIL (confirmed via skopeo probe) |
-| Repin `Containerfile:14` to `46e14db9…` | **GREEN** | digest resolves; index covers `linux/amd64` → PASS |
+| Repin `Containerfile:15` to `46e14db9…` | **GREEN** | digest resolves; index covers `linux/amd64` → PASS |
 | `pixi run policy-check` | green | format check still passes (regression: nothing broken) |
 | `pixi run policy-check-chained-bases-reachable` | green | new guard passes |
 | CI `validate-base-pins.yml` on the PR | green | crane step passes against published GHCR |
 
 ## Acceptance criteria
 
-- `Containerfile:14` digest **equals** `sha256:46e14db9663ef49c9f3fa62ff7b57d06358f41878ca53ba899adac941a1e2184` (one-off, verified at review — the permanent test is reachability-based by D5).
+- `Containerfile:15` digest **equals** `sha256:46e14db9663ef49c9f3fa62ff7b57d06358f41878ca53ba899adac941a1e2184` (one-off, verified at review — the permanent test is reachability-based by D5).
 - `test-chained-bases-reachable.sh` is RED before the repin, GREEN after.
 - `pixi run policy-check` and `pixi run policy-check-chained-bases-reachable` both pass.
 - `validate-base-pins.yml` is green on the PR.
