@@ -19,6 +19,8 @@ conftest = "*"
 trivy = "*"
 pre-commit = "*"
 zensical = ">=0.0.43,<0.0.44"
+crane = "*"
+jq = "*"
 
 [tool.pixi.tasks]
 lint-containerfiles = "find images -name Containerfile -print0 | xargs -0 hadolint --config .hadolint.yaml"
@@ -30,6 +32,7 @@ policy-check-image-meta = "find images -name image.yaml -print0 | xargs -0 conft
 policy-check-workflow-tags = "bash tests/test-build-workflow-tags.sh"
 policy-check-base-pinning = "bash tests/test-base-images-pinned.sh"
 policy-check-chained-bases = "bash tests/test-chained-bases-pinned.sh"
+policy-check-chained-bases-reachable = "bash tests/test-chained-bases-reachable.sh"
 pre-commit-install = "pre-commit install --hook-type pre-commit --hook-type pre-push"
 pre-commit-run = "pre-commit run --all-files"
 trivy-scan = "scripts/trivy-scan.sh"
