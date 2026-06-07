@@ -21,8 +21,9 @@ for cf in images/*/Containerfile; do
   # Only Containerfiles that actually chain (declare ARG BASE_CONTAINER) are in scope.
   grep -qE '^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER' "$cf" || continue
   # Extract the default value of the LAST `ARG BASE_CONTAINER=...` line.
+  # Extraction kept in sync with tests/test-chained-bases-reachable.sh (incl. trailing-ws strip).
   val=$(grep -E '^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=' "$cf" | tail -1 \
-        | sed -E 's/^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=//; s/[[:space:]]+#.*$//' || true)
+        | sed -E 's/^[[:space:]]*ARG[[:space:]]+BASE_CONTAINER=//; s/[[:space:]]+#.*$//; s/[[:space:]]*$//' || true)
   if [ -z "$val" ]; then
     fail "$cf: ARG BASE_CONTAINER has no digest-pinned default"
   elif [[ "$val" =~ $re ]]; then

@@ -24,6 +24,11 @@ jobs:
             "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
           chmod +x /usr/local/bin/yq
 
+      # Ensured here (before the first jq use below) so a jq-less runner fails this step's own
+      # check rather than the inline jq pipe further down with a cryptic error.
+      - name: Ensure jq is installed (used by the index/platform checks below)
+        run: command -v jq >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y jq)
+
       - name: Assert each pinned base is an index covering declared platforms
         run: |
           set -euo pipefail
@@ -40,6 +45,7 @@ jobs:
               # crane/skopeo reject repo:tag@digest refs; fetch by repo@digest (digest is content-addressed).
               repo="${spec%@*}"; ref="${repo%:*}@${spec##*@}"
               # jq -e errors (non-zero) on a non-index or empty manifest list — fail-closed.
+              # Same filter as tests/test-chained-bases-reachable.sh — keep the two in sync.
               if ! have=$(crane manifest "$ref" | jq -er 'if (.manifests | type) == "array" and (.manifests | length) > 0 then [.manifests[].platform | "\(.os)/\(.architecture)"] | join(" ") else error("not a non-empty image index") end' 2>/dev/null); then
                 echo "FAIL: ${cf}: ${spec} is not a multi-arch index"; rc=1; continue
               fi
@@ -54,8 +60,7 @@ jobs:
       - name: Assert chained ARG BASE_CONTAINER pins are digest-pinned (format, offline)
         run: bash tests/test-chained-bases-pinned.sh
 
-      - name: Ensure jq is installed (reachability guard dependency)
-        run: command -v jq >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y jq)
-
       - name: Assert chained ARG BASE_CONTAINER pins resolve and cover declared platforms
+        env:
+          CHAINED_BASES_STRICT: "1"  # missing crane/jq must FAIL in CI, not silently SKIP
         run: bash tests/test-chained-bases-reachable.sh
