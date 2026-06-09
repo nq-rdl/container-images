@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   validate:
@@ -16,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: imjasonh/setup-crane@v0.6
+
+      # Authenticate to GHCR so a not-yet-published chained base (a brand-new chain's first PR)
+      # returns MANIFEST_UNKNOWN — which tests/test-chained-bases-reachable.sh treats as a
+      # bootstrap SKIP. Unauthenticated, GHCR answers DENIED for a nonexistent package, which the
+      # guard (correctly) fails on. Login does not change behaviour for already-published bases.
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | crane auth login ghcr.io -u "$ACTOR" --password-stdin
 
       - name: Install yq
         run: |

@@ -486,3 +486,108 @@ jobs:
               "${src}@${digest}"
             echo "Published aliases for ${alias}: ${TAG}, ${MINOR}, latest"
           done
+
+  bake-jamovi:
+    # The jamovi chain (r-base -> jamovi-deps -> jamovi) is a heavy in-graph bake: ~200 R packages
+    # compiled and a multi-stage C++/Cython/vite app build. Kept in its own job (separate from the
+    # datascience bake) so its runtime and failures are isolated. gha cache (mode=max, per-image
+    # scope) keeps unchanged rebuilds fast.
+    runs-on: ubuntu-latest
+    env:
+      # Keep in sync with docker-bake.hcl and the image.yaml tags.
+      R_VERSION: "4.5.0"
+      R_MINOR: "4.5"
+      JAMOVI_VERSION: "2.7.30"
+      JAMOVI_MINOR: "2.7"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bake the jamovi chain
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            docker buildx bake --file docker-bake.hcl --load jamovi
+          else
+            docker buildx bake --file docker-bake.hcl --push jamovi
+          fi
+
+      - name: Trivy scan (r-base)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/r-base-ubi9:${{ env.R_VERSION }}
+          format: sarif
+          output: trivy-r-base-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (r-base)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-r-base-ubi9.sarif
+          category: trivy-r-base-ubi9
+
+      - name: Trivy scan (jamovi-deps)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9:${{ env.JAMOVI_VERSION }}
+          format: sarif
+          output: trivy-jamovi-deps-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (jamovi-deps)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-jamovi-deps-ubi9.sarif
+          category: trivy-jamovi-deps-ubi9
+
+      - name: Trivy scan (jamovi)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9:${{ env.JAMOVI_VERSION }}
+          format: sarif
+          output: trivy-jamovi-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (jamovi)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-jamovi-ubi9.sarif
+          category: trivy-jamovi-ubi9
+
+      - name: Publish convenience aliases
+        if: github.event_name != 'pull_request'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          publish() {  # $1=image  $2=version  $3=minor
+            local name="$1" ver="$2" minor="$3" alias src digest
+            [[ "$name" =~ ^(.+)-ubi([0-9]+)$ ]] || return 0
+            alias="${BASH_REMATCH[1]}"
+            src="ghcr.io/${OWNER}/${name}"
+            digest=$(docker buildx imagetools inspect "${src}:${ver}" --format '{{json .Manifest}}' | jq -r '.digest')
+            docker buildx imagetools create \
+              --tag "ghcr.io/${OWNER}/${alias}:${ver}" \
+              --tag "ghcr.io/${OWNER}/${alias}:${minor}" \
+              --tag "ghcr.io/${OWNER}/${alias}:latest" \
+              "${src}@${digest}"
+            echo "Published aliases for ${alias}: ${ver}, ${minor}, latest"
+          }
+          publish r-base-ubi9      "${R_VERSION}"      "${R_MINOR}"
+          publish jamovi-deps-ubi9 "${JAMOVI_VERSION}" "${JAMOVI_MINOR}"
+          publish jamovi-ubi9      "${JAMOVI_VERSION}" "${JAMOVI_MINOR}"

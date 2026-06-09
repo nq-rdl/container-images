@@ -1,0 +1,236 @@
+# syntax=docker/dockerfile:1.7
+#
+# jamovi (server) on UBI9 (chained on jamovi-deps-ubi9).
+# Blueprint: jamovi/jamovi docker/jamovi-Dockerfile @ v2.7.30.
+#
+# Key UBI9 port adaptations vs the upstream Ubuntu-noble build:
+#   * Build context -> a pinned recursive `git clone` (the `source` stage). Upstream COPYs the
+#     repo root; jamovi has submodules (jmv, readstat, i18n, plots, + nested), so we clone
+#     --recursive at a fixed commit for reproducibility. COPYs become `COPY --from=source ...`.
+#   * apt -> dnf (UBI9 + EPEL + AlmaLinux repos inherited from r-base via jamovi-deps).
+#   * Python 3.12: UBI9's /usr/bin/python3 is 3.9, so we install python3.12 explicitly and the
+#     final CMD calls /usr/bin/python3.12. The upstream COPY of `.../python3.12/dist-packages`
+#     (a Debian-only path) becomes `.../python3.12/site-packages` (the RHEL/upstream-Python path).
+#   * protobuf: the C++ engine uses system protoc 3.14 (AlmaLinux, ABI-matched to -lprotobuf);
+#     the Python `--python_out` step uses a pinned modern protoc 34.0 (setup.py's protoc is
+#     python-only) so jamovi_pb2.py gencode matches the pinned protobuf==7.34.0 runtime.
+#     PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python is set as a belt-and-suspenders startup guard.
+#   * nanomsg: installed from EPEL via dnf (build: nanomsg-devel; runtime: nanomsg) instead of
+#     COPYing libnanomsg.so from the Debian multiarch path (which does not exist on RHEL).
+#   * boost::asio comes from boost-devel (AlmaLinux); no standalone asio-devel needed.
+#   * Final stage is `FROM ${BASE_CONTAINER}` (not an internal `r-base` alias) so the last FROM
+#     is UBI-rooted and policy/base_image.rego passes.
+#
+# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER digest (jamovi-deps-ubi9 is unpublished, so
+# tests/test-chained-bases-reachable.sh bootstrap-SKIPs it; a repin PR sets the real digest after
+# first publish). In a bake build the docker-bake.hcl contexts+args wiring overrides this with the
+# in-graph jamovi-deps target, so the digest is never resolved from the registry.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/jamovi-deps-ubi9:2.7.30@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+ARG JAMOVI_REF=771860de06a6732712043ee9a2a5c86a53a66985
+ARG NODE_VERSION=22.16.0
+ARG NODE_SHA256=f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e
+ARG PROTOC_VERSION=34.0
+ARG PROTOC_SHA256=e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
+
+##### SOURCE — pinned recursive clone of the jamovi tree #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS source
+ARG JAMOVI_REF
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs git \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+RUN git clone https://github.com/jamovi/jamovi.git /src \
+    && git -C /src checkout "${JAMOVI_REF}" \
+    && git -C /src submodule update --init --recursive
+
+##### NODE — pinned Node.js toolchain (checksum-verified) #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS node-bin
+ARG NODE_VERSION
+ARG NODE_SHA256
+RUN curl -fsSL -o /tmp/node.tar.xz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
+    && mkdir -p /node \
+    && tar -xf /tmp/node.tar.xz -C /node --strip-components=1 \
+    && rm -f /tmp/node.tar.xz
+
+##### SERVER — Python 3.12 server (Cython core, readstat, server) #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS server
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# build deps: python3.12 toolchain, C/C++ compilers, protobuf C++ headers (Cython core/server),
+# boost (core links boost_filesystem/system), nanomsg headers, zlib (readstat C build).
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
+        python3.12 python3.12-devel python3.12-pip \
+        gcc gcc-c++ make \
+        protobuf-devel boost-devel nanomsg-devel zlib-devel \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+# Modern protoc for the Python --python_out step (setup.py's protoc is python-only on Linux).
+RUN curl -fsSL -o /tmp/protoc.zip \
+        "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+    && echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c - \
+    && (cd /tmp && python3.12 -c "import zipfile; zipfile.ZipFile('protoc.zip').extractall('protoc')") \
+    && install -m 0755 /tmp/protoc/bin/protoc /usr/local/bin/protoc \
+    && rm -rf /tmp/protoc.zip /tmp/protoc \
+    && protoc --version
+
+# Python runtime deps (requirements.txt) into the system python3.12 site-packages.
+COPY --from=source /src/server/requirements.txt /tmp/source/server/requirements.txt
+RUN python3.12 -m pip install --no-cache-dir --break-system-packages \
+        -r /tmp/source/server/requirements.txt
+
+# readstat (submodule: jamovi/jamovi-readstat) — Cython/C extension into the jamovi server lib.
+COPY --from=source /src/readstat /tmp/source/readstat
+WORKDIR /tmp/source/readstat
+RUN python3.12 setup.py install --install-lib=/usr/lib/jamovi/server \
+        --single-version-externally-managed --record=/dev/null
+
+# Cython core, then the server package, installed into /usr/lib/jamovi/server.
+WORKDIR /tmp/source/server
+COPY --from=source /src/server/setup.py            /tmp/source/server/
+COPY --from=source /src/server/jamovi/core         /tmp/source/server/jamovi/core
+COPY --from=source /src/server/jamovi/common       /tmp/source/server/jamovi/common
+COPY --from=source /src/server/jamovi/core.pyx     /tmp/source/server/jamovi/
+COPY --from=source /src/server/jamovi/__init__.py  /tmp/source/server/jamovi/
+RUN SETUP_CORE_ONLY=1 python3.12 setup.py install --install-lib=/usr/lib/jamovi/server \
+        --single-version-externally-managed --record=/dev/null
+COPY --from=source /src/server/ /tmp/source/server/
+RUN SETUP_SERVER_ONLY=1 python3.12 setup.py install --install-lib=/usr/lib/jamovi/server \
+        --single-version-externally-managed --record=/dev/null
+
+# env.conf consumed by the jamovi launcher.
+RUN mkdir -p /usr/lib/jamovi/bin \
+    && { \
+        echo "[ENV]"; \
+        echo "JAMOVI_HOME=/usr/lib/jamovi"; \
+        echo "JAMOVI_MODULES_PATH=/usr/lib/jamovi/modules"; \
+        echo "JAMOVI_CLIENT_PATH=/usr/lib/jamovi/client"; \
+        echo "JAMOVI_VERSION_PATH=/usr/lib/jamovi/version"; \
+        echo "JAMOVI_R_VERSION=4.5.0-x64"; \
+    } > /usr/lib/jamovi/bin/env.conf
+
+##### CLIENT — Node/vite build of the web client #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS client
+COPY --from=node-bin /node /usr/local
+# Copy the lockfile alongside package.json so npm resolves from the locked tree (reproducible),
+# before the rest of the client source (layer caching), as upstream does.
+COPY --from=source /src/client/package.json /src/client/package-lock.json /tmp/source/client/
+WORKDIR /tmp/source/client
+RUN npm install
+RUN mkdir -p /usr/lib/jamovi/client
+COPY --from=source /src/client/ /tmp/source/client/
+COPY --from=source /src/server/jamovi/server/jamovi.proto /tmp/source/client/assets/coms.proto
+RUN node_modules/.bin/vite build --outDir /usr/lib/jamovi/client
+COPY --from=source /src/version /usr/lib/jamovi/client
+
+##### ENGINE — C++ analysis engine (protoc 3.14 cpp_out, links protobuf/nanomsg/boost/RInside) #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS engine
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# System protoc 3.14 (protobuf-compiler) is ABI-matched to -lprotobuf; boost-devel provides
+# boost::asio; nanomsg-devel from EPEL.
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
+        gcc gcc-c++ make \
+        protobuf-devel protobuf-compiler boost-devel nanomsg-devel \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+COPY --from=source /src/engine                            /tmp/source/engine
+COPY --from=source /src/server/jamovi/common              /tmp/source/server/jamovi/common
+COPY --from=source /src/server/jamovi/server/jamovi.proto /tmp/source/server/jamovi/server/jamovi.proto
+WORKDIR /tmp/source/engine
+RUN bash configure --rhome="${R_HOME}" \
+        --base-module-path="${R_HOME}/library" \
+        --rpath="${R_HOME}/library/RInside/lib" \
+        --rpath="${R_HOME}/lib" \
+        CXXFLAGS=-DJAMOVI_ENGINE_SUPPORT_LOCAL_SOCKETS \
+    && make \
+    && DESTDIR=/usr/lib/jamovi make install
+
+##### JMVCORE — the base R module #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS jmvcore
+RUN mkdir -p /usr/lib/jamovi/modules/base/R
+COPY --from=source /src/jmvcore /tmp/source/jmvcore
+RUN R CMD INSTALL /tmp/source/jmvcore --library=/usr/lib/jamovi/modules/base/R
+ENV R_LIBS=/usr/lib/jamovi/modules/base/R
+
+##### COMPILER — jamovi module compiler (jmc) #####
+FROM jmvcore AS compiler
+COPY --from=node-bin /node /usr/local
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs git \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+RUN mkdir -p /usr/lib/jamovi/modules /usr/lib/jamovi/client /usr/lib/jamovi/bin
+COPY --from=source /src/version           /usr/lib/jamovi/version
+COPY --from=source /src/platform/env.conf /usr/lib/jamovi/bin/env.conf
+COPY --from=source /src/platform/jamovi   /usr/lib/jamovi/bin/jamovi
+RUN chmod u+x /usr/lib/jamovi/bin/jamovi
+COPY --from=source /src/jamovi-compiler /tmp/source/jamovi-compiler
+WORKDIR /tmp/source/jamovi-compiler
+RUN npm install && npm install -g
+
+##### JMV — compile the jmv + plots modules #####
+FROM compiler AS jmv
+COPY --from=source /src/jmv/ /tmp/source/jmv
+WORKDIR /tmp/source/jmv
+RUN jmc --install . --to /usr/lib/jamovi/modules --rhome "${R_HOME}" \
+        --rlibs /usr/lib/jamovi/modules/base/R --patch-version --skip-deps
+COPY --from=source /src/plots/ /tmp/source/plots
+WORKDIR /tmp/source/plots
+RUN jmc --install . --to /usr/lib/jamovi/modules --rhome "${R_HOME}" \
+        --rlibs /usr/lib/jamovi/modules/base/R --patch-version --skip-deps
+
+##### I18N — build translation JSON #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS i18n
+COPY --from=node-bin /node /usr/local
+RUN mkdir -p /usr/lib/jamovi/i18n/json
+COPY --from=source /src/i18n /tmp/source/i18n
+WORKDIR /tmp/source/i18n
+RUN npm install \
+    && node /tmp/source/i18n/index.js --build src --dest /usr/lib/jamovi/i18n/json
+
+##### FINAL — assembled jamovi runtime #####
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER} AS jamovi
+
+LABEL org.opencontainers.image.title="jamovi-ubi9"
+LABEL org.opencontainers.image.description="jamovi statistical spreadsheet (server) on UBI9"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
+
+# Runtime libraries not already present in the deps base: the Python 3.12 runtime, nanomsg
+# (EPEL), and the boost runtime libs the engine + core link. protobuf, cairo, libicu, libgomp,
+# libgfortran, etc. are inherited from jamovi-deps-ubi9.
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
+        python3.12 python3.12-libs python3.12-setuptools \
+        nanomsg protobuf boost-filesystem boost-system \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+COPY --from=jmv    /usr/lib/jamovi/ /usr/lib/jamovi/
+COPY --from=client /usr/lib/jamovi/client/ /usr/lib/jamovi/client/
+COPY --from=i18n   /usr/lib/jamovi/i18n/json /usr/lib/jamovi/i18n/json
+COPY --from=engine /usr/lib/jamovi/bin/jamovi-engine /usr/lib/jamovi/bin/jamovi-engine
+# Python deps live in the RHEL/upstream-Python site-packages path (NOT Debian dist-packages).
+# As root, `pip --break-system-packages` installs pure-Python packages to .../local/lib/...
+# (purelib) and compiled C-extension packages (numpy, scipy, lxml, aiohttp, nanomsg, frozenlist,
+# multidict, yarl, …) to .../local/lib64/... (platlib). BOTH trees must be copied, and both are
+# added to sys.path by site.py when present.
+COPY --from=server /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=server /usr/local/lib64/python3.12/site-packages /usr/local/lib64/python3.12/site-packages
+COPY --from=server /usr/lib/jamovi/ /usr/lib/jamovi/
+
+COPY smoke.sh /usr/local/bin/jamovi-smoke
+RUN chmod +x /usr/local/bin/jamovi-smoke
+
+ENV LD_LIBRARY_PATH=${R_HOME}/lib \
+    JAMOVI_HOME=/usr/lib/jamovi \
+    PYTHONPATH=/usr/lib/jamovi/server \
+    R_LIBS=${R_HOME}/library \
+    JAMOVI_SESSION_EXPIRES=0 \
+    JAMOVI_ALLOW_ARBITRARY_CODE=false \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+
+EXPOSE 41337
+CMD ["/usr/bin/python3.12", "-m", "jamovi.server", "41337", "--if=*"]

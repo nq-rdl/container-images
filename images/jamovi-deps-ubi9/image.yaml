@@ -1,0 +1,23 @@
+name: jamovi-deps-ubi9
+description: jamovi R-package dependency layer on UBI9 (R 4.5.0 + ~200 CRAN packages)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: ghcr.io
+  repository: nq-rdl/r-base-ubi9
+  version: "4.5.0"
+runtime:
+  name: jamovi-deps
+  version: "2.7.30"
+tags:
+  - "2.7.30"
+  - "2.7"
+  - "latest"
+depends_on: r-base-ubi9
+bake_target: jamovi-deps
+support:
+  status: stable
+  eol: "2027-06-30"
