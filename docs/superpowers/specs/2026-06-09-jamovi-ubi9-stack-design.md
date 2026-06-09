@@ -115,7 +115,8 @@ installs, and RProtoBuf/igraph/systemfonts build+load against these libs.
   `base_image.rego` (which checks only the **last** FROM) passes — jamovi's upstream final
   stage `FROM r-base AS jamovi` (internal alias) would otherwise be denied.
 - 5 required OCI labels on each final image; `org.opencontainers.image.vendor="Research Data
-  Laboratory"`; `licenses`: `GPL-2.0-or-later` (jamovi) / `GPL-2.0-only` (R base) per upstream.
+  Laboratory"`; `licenses`: `AGPL-3.0-or-later` (jamovi) / `GPL-2.0-or-later` (r-base +
+  jamovi-deps) per upstream.
 - `image.yaml` tags pass `image-meta/tags.rego` (X.Y.Z / X.Y / latest).
 - Chained `ARG BASE_CONTAINER=…@sha256:<placeholder>` digests: pass the format test
   (`test-chained-bases-pinned.sh`) and **bootstrap-skip** the reachability test

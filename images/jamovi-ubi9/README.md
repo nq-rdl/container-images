@@ -50,7 +50,7 @@ do not enable it unless you understand the risks).
 | Build context = repo root | Pinned recursive `git clone` (a `source` stage); jamovi's submodules (`jmv`, `readstat`, `i18n`, `plots`) are fetched `--recursive` at a fixed commit |
 | system `python3` (3.12 on noble) | `python3.12` installed explicitly (UBI9's `/usr/bin/python3` is 3.9); CMD calls `/usr/bin/python3.12` |
 | `COPY …/python3.12/dist-packages` | `…/site-packages` (Debian uses `dist-packages`; RHEL uses upstream-Python `site-packages`) |
-| `protoc` (3.21) for both C++ and Python | C++ engine uses system protoc 3.14 (ABI-matched to `-lprotobuf`); Python `--python_out` uses pinned protoc 31.1 (matches `protobuf==7.34.0`); `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` startup guard |
+| `protoc` (3.21) for both C++ and Python | C++ engine uses system protoc 3.14 (ABI-matched to `-lprotobuf`); Python `--python_out` uses pinned protoc 34.0 (matches `protobuf==7.34.0`); `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` startup guard |
 | `libnanomsg.so` COPYed from Debian multiarch path | `nanomsg` installed via dnf (EPEL); RHEL has no `/usr/lib/x86_64-linux-gnu` |
 | `libasio-dev` | `boost::asio` from `boost-devel` (AlmaLinux) — no standalone asio |
 | `FROM r-base AS jamovi` (final) | `FROM ${BASE_CONTAINER} AS jamovi` so the last FROM is UBI-rooted (policy) |

@@ -59,6 +59,12 @@ RUN curl -fsSL -o /tmp/node.tar.xz \
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER} AS server
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# PROTOC_VERSION/PROTOC_SHA256 are declared before the first FROM (global scope); redeclare them
+# in this stage so they reach the protoc-download RUN below. Pre-FROM ARGs are in scope only for
+# FROM lines, not for RUN instructions inside a stage — without this redeclaration both expand to
+# empty and the download URL collapses to .../v/protoc--linux-x86_64.zip (a 404).
+ARG PROTOC_VERSION
+ARG PROTOC_SHA256
 # build deps: python3.12 toolchain, C/C++ compilers, protobuf C++ headers (Cython core/server),
 # boost (core links boost_filesystem/system), nanomsg headers, zlib (readstat C build).
 RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \

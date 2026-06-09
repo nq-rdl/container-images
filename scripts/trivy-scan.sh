@@ -58,10 +58,19 @@ BAKE_IMAGES=()
 if [ "$RUNTIME" = "docker" ] && command -v docker >/dev/null && docker buildx version >/dev/null 2>&1; then
   mapfile -t BAKE_DIRS < <(grep -lR --include=image.yaml 'bake_target:' "$IMAGES_DIR" | xargs -r -n1 dirname)
   if [ "${#BAKE_DIRS[@]}" -gt 0 ]; then
-    # Only bake if not already present in the local daemon (e.g. smoke ran first).
-    _first_bake_name=$(basename "${BAKE_DIRS[0]}")
-    _first_bake_tag="ghcr.io/nq-rdl/${_first_bake_name}:latest"
-    if ! docker image inspect "$_first_bake_tag" &>/dev/null; then
+    # Skip baking only if EVERY bake-target image is already loaded in the local daemon (e.g.
+    # smoke-test.sh baked them first). Checking just the first image is wrong: with more than one
+    # bake group, one group can be present (e.g. datascience) while another (jamovi) is absent —
+    # we would skip the bake, then the scan loop below would reference ghcr.io/...:latest tags
+    # that were never built.
+    _need_bake=0
+    for d in "${BAKE_DIRS[@]}"; do
+      if ! docker image inspect "ghcr.io/nq-rdl/$(basename "$d"):latest" &>/dev/null; then
+        _need_bake=1
+        break
+      fi
+    done
+    if [ "$_need_bake" -eq 1 ]; then
       echo "==> Baking chained images for Trivy scan: ${BAKE_DIRS[*]}"
       docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load datascience jamovi
     fi
