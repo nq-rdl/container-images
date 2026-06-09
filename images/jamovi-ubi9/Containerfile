@@ -48,7 +48,7 @@ RUN git clone https://github.com/jamovi/jamovi.git /src \
 FROM ${BASE_CONTAINER} AS node-bin
 ARG NODE_VERSION
 ARG NODE_SHA256
-RUN curl -fsSL -o /tmp/node.tar.xz \
+RUN curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/node.tar.xz \
         "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
     && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
     && mkdir -p /node \
@@ -73,7 +73,8 @@ RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
         protobuf-devel boost-devel nanomsg-devel zlib-devel \
     && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 # Modern protoc for the Python --python_out step (setup.py's protoc is python-only on Linux).
-RUN curl -fsSL -o /tmp/protoc.zip \
+# --retry-all-errors survives transient GitHub release-CDN 404/5xx hiccups under CI load.
+RUN curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/protoc.zip \
         "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
     && echo "${PROTOC_SHA256}  /tmp/protoc.zip" | sha256sum -c - \
     && (cd /tmp && python3.12 -c "import zipfile; zipfile.ZipFile('protoc.zip').extractall('protoc')") \

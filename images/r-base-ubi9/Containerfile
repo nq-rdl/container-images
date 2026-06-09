@@ -76,7 +76,7 @@ RUN case "${TARGETARCH:-amd64}" in \
         arm64) PANDOC_ARCH=arm64 ;; \
         *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/pandoc.tar.gz \
+    curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/pandoc.tar.gz \
         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${PANDOC_ARCH}.tar.gz"; \
     echo "${PANDOC_SHA256}  /tmp/pandoc.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/pandoc.tar.gz -C /opt; \
@@ -88,7 +88,7 @@ RUN case "${TARGETARCH:-amd64}" in \
 # R from Posit's prebuilt rhel-9 binary (installs to /opt/R/${R_VERSION}). flexiblas-devel and
 # other dependencies resolve from the AlmaLinux/EPEL repos configured above. The RPM is
 # checksum-verified before install.
-RUN curl -fsSL -o "/tmp/R-${R_VERSION}.rpm" \
+RUN curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "/tmp/R-${R_VERSION}.rpm" \
         "https://cdn.posit.co/r/${OS_IDENTIFIER}/pkgs/R-${R_VERSION}-1-1.$(arch).rpm" \
     && echo "${R_SHA256}  /tmp/R-${R_VERSION}.rpm" | sha256sum -c - \
     && dnf -y install "/tmp/R-${R_VERSION}.rpm" \
