@@ -79,3 +79,42 @@ jobs:
         with:
           sarif_file: trivy-rescan-${{ matrix.image }}-${{ matrix.tag }}.sarif
           category: trivy-rescan-${{ matrix.image }}-${{ matrix.tag }}
+
+  # Third-party, closed-source build images we consume but cannot patch — e.g. the
+  # JetBrains Writerside builder used by the documentation repo's build stage. We
+  # scan these to OBSERVE, not to gate: track newly-disclosed CVEs, inform which
+  # upstream tag we pin to, and retain audit evidence for governance. The image is
+  # build-time only (it never ships to production), so findings are informational
+  # (exit-code 0). Unlike the owned-image gate, --ignore-unfixed is deliberately
+  # omitted — we can't selectively patch a closed image, so we want the full picture.
+  # Keep each tag in sync with the consuming repo's pin (documentation Dockerfile
+  # `FROM jetbrains/writerside-builder:<tag>`).
+  rescan-thirdparty:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: jetbrains/writerside-builder
+            tag: '2025.04.8412'
+            slug: writerside-builder
+    steps:
+      - uses: actions/checkout@v6
+
+      # Public Docker Hub image — no auth needed. If anonymous pull rate limits on
+      # shared runners become a problem, add a docker/login-action@v4 step with
+      # Docker Hub credentials before this scan.
+      - name: Scan third-party image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:${{ matrix.tag }}
+          format: sarif
+          output: trivy-rescan-thirdparty-${{ matrix.slug }}-${{ matrix.tag }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-rescan-thirdparty-${{ matrix.slug }}-${{ matrix.tag }}.sarif
+          category: trivy-rescan-thirdparty-${{ matrix.slug }}
