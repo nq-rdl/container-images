@@ -86,7 +86,8 @@ jobs:
   # upstream tag we pin to, and retain audit evidence for governance. The image is
   # build-time only (it never ships to production), so findings are informational
   # (exit-code 0). Unlike the owned-image gate, --ignore-unfixed is deliberately
-  # omitted — we can't selectively patch a closed image, so we want the full picture.
+  # omitted — we can't selectively patch a closed image, so we keep unfixed findings
+  # too, not just fixable ones (severity is still scoped to CRITICAL/HIGH below).
   # Keep each tag in sync with the consuming repo's pin (documentation Dockerfile
   # `FROM jetbrains/writerside-builder:<tag>`).
   rescan-thirdparty:
@@ -117,4 +118,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-rescan-thirdparty-${{ matrix.slug }}-${{ matrix.tag }}.sarif
-          category: trivy-rescan-thirdparty-${{ matrix.slug }}
+          category: trivy-rescan-thirdparty-${{ matrix.slug }}-${{ matrix.tag }}
