@@ -1,3 +1,3 @@
 kind: Added
-body: 'Observational Trivy rescan of the third-party JetBrains Writerside builder image (non-blocking, full findings) to track CVEs in closed-source build images we cannot patch'
+body: 'Observational Trivy rescan of the third-party JetBrains Writerside builder image (non-blocking, includes unfixed CRITICAL/HIGH findings) to track CVEs in closed-source build images we cannot patch'
 time: 2026-06-09T09:00:00.000000+10:00
