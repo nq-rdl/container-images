@@ -2,10 +2,10 @@ name: Validate Base Pins
 
 on:
   pull_request:
-    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
+    paths: ['images/**', 'tests/**', 'scripts/repin-chained-base.sh', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
   push:
     branches: [main]
-    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
+    paths: ['images/**', 'tests/**', 'scripts/repin-chained-base.sh', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
 
 permissions:
   contents: read
@@ -67,6 +67,12 @@ jobs:
             done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$cf")
           done
           exit "$rc"
+
+      # Offline: no network, no crane needed. Tests scripts/repin-chained-base.sh end-to-end with a
+      # stub crane, covering error-class discrimination, digest-format validation, path normalisation,
+      # and comment updating. Placed before the network-dependent steps so a broken script fails fast.
+      - name: Test repin-chained-base script (offline, hermetic)
+        run: bash tests/test-repin-chained-base.sh
 
       - name: Assert chained ARG BASE_CONTAINER pins are digest-pinned (format, offline)
         run: bash tests/test-chained-bases-pinned.sh
