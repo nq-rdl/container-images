@@ -32,6 +32,7 @@ ARG NODE_VERSION=22.16.0
 ARG NODE_SHA256=f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e
 ARG PROTOC_VERSION=34.0
 ARG PROTOC_SHA256=e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
+ARG R_VERSION=4.5.0
 
 ##### SOURCE — pinned recursive clone of the jamovi tree #####
 # hadolint ignore=DL3026
@@ -59,12 +60,14 @@ RUN curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/node.tar.xz 
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER} AS server
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-# PROTOC_VERSION/PROTOC_SHA256 are declared before the first FROM (global scope); redeclare them
-# in this stage so they reach the protoc-download RUN below. Pre-FROM ARGs are in scope only for
-# FROM lines, not for RUN instructions inside a stage — without this redeclaration both expand to
-# empty and the download URL collapses to .../v/protoc--linux-x86_64.zip (a 404).
+# Any stage that uses these ARGs must redeclare them — pre-FROM ARGs are in scope only for
+# FROM lines, not for RUN instructions inside a stage. Without redeclaration the ARG expands
+# to empty, producing broken URLs or wrong env.conf values.
 ARG PROTOC_VERSION
 ARG PROTOC_SHA256
+# R_VERSION drives the JAMOVI_R_VERSION entry in env.conf — redeclared here so bumping
+# R_VERSION in docker-bake.hcl propagates automatically. Default matches r-base-ubi9.
+ARG R_VERSION=4.5.0
 # build deps: python3.12 toolchain, C/C++ compilers, protobuf C++ headers (Cython core/server),
 # boost (core links boost_filesystem/system), nanomsg headers, zlib (readstat C build).
 # python3.12-setuptools is required: Python 3.12 removed distutils from the stdlib (PEP 632), and
@@ -117,7 +120,7 @@ RUN mkdir -p /usr/lib/jamovi/bin \
         echo "JAMOVI_MODULES_PATH=/usr/lib/jamovi/modules"; \
         echo "JAMOVI_CLIENT_PATH=/usr/lib/jamovi/client"; \
         echo "JAMOVI_VERSION_PATH=/usr/lib/jamovi/version"; \
-        echo "JAMOVI_R_VERSION=4.5.0-x64"; \
+        echo "JAMOVI_R_VERSION=${R_VERSION}-x64"; \
     } > /usr/lib/jamovi/bin/env.conf
 
 ##### CLIENT — Node/vite build of the web client #####

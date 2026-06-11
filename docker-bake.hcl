@@ -141,6 +141,9 @@ target "jamovi" {
   }
   args = {
     BASE_CONTAINER = "ghcr.io/nq-rdl/jamovi-deps-ubi9"
+    # Pass R_VERSION so the server stage derives JAMOVI_R_VERSION automatically;
+    # bumping R_VERSION here propagates to env.conf without any Containerfile edit.
+    R_VERSION = R_VERSION
   }
   tags = [
     "${REGISTRY}/jamovi-ubi9:${JAMOVI_VERSION}",
