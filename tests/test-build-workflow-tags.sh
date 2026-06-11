@@ -51,18 +51,56 @@ else
   fail "build-push-action missing sbom: false (default enables sha256-* digest tags via referrers fallback)"
 fi
 
-# Test: GitHub-native attestation must be used (not cosign, which creates sha256-* ghost tags)
-if grep -q 'actions/attest-build-provenance' "$WORKFLOW"; then
-  pass "uses GitHub-native build provenance attestation"
-else
-  fail "missing actions/attest-build-provenance (GitHub-native attestation avoids sha256-* ghost tags)"
-fi
+# Test: GitHub-native attestation must be present in EVERY job that pushes images to GHCR.
+# A file-wide grep would pass even if only one job attests; we require per-job coverage.
+# We extract each job block (from '^  <job>:' to the next '^  [a-zA-Z]' at the same indent)
+# using awk, then check each block independently.
+#
+# Jobs that push via 'buildx bake ... --push' or 'build-push-action ... push: true':
+#   - build        (build-push-action with push: true)
+#   - bake-jamovi  (docker buildx bake --push jamovi)
+#
+# KNOWN GAP — allowlisted:
+#   - bake          (datascience chain) predates per-job attestation; adding it is tracked as a
+#                   follow-up. This allowlist entry must be removed once that work lands.
+ATTEST_REQUIRED_JOBS=(build bake-jamovi)
+ATTEST_ALLOWLISTED_JOBS=(bake)
 
-if grep -q 'actions/attest-sbom' "$WORKFLOW"; then
-  pass "uses GitHub-native SBOM attestation"
-else
-  fail "missing actions/attest-sbom (GitHub-native attestation avoids sha256-* ghost tags)"
-fi
+extract_job_block() {
+  local job="$1" file="$2"
+  # Extract from '  <job>:' (two-space indent, top-level job key) to the next such line.
+  awk "/^  ${job}:/{found=1} found && /^  [a-zA-Z]/ && !/^  ${job}:/{found=0} found{print}" "$file"
+}
+
+for job in "${ATTEST_REQUIRED_JOBS[@]}"; do
+  block=$(extract_job_block "$job" "$WORKFLOW")
+  if [ -z "$block" ]; then
+    fail "job '${job}': block not found in workflow (expected a push-to-GHCR job)"
+    continue
+  fi
+
+  if echo "$block" | grep -q 'actions/attest-build-provenance'; then
+    pass "job '${job}': has actions/attest-build-provenance"
+  else
+    fail "job '${job}': missing actions/attest-build-provenance (GitHub-native attestation avoids sha256-* ghost tags)"
+  fi
+
+  if echo "$block" | grep -q 'actions/attest-sbom'; then
+    pass "job '${job}': has actions/attest-sbom"
+  else
+    fail "job '${job}': missing actions/attest-sbom (GitHub-native attestation avoids sha256-* ghost tags)"
+  fi
+done
+
+# Verify the allowlisted jobs exist (so a rename doesn't silently drop the known-gap marker)
+for job in "${ATTEST_ALLOWLISTED_JOBS[@]}"; do
+  block=$(extract_job_block "$job" "$WORKFLOW")
+  if [ -n "$block" ]; then
+    pass "job '${job}': allowlisted known-gap job still present (no regression)"
+  else
+    fail "job '${job}': allowlisted job not found — update ATTEST_ALLOWLISTED_JOBS if it was renamed"
+  fi
+done
 
 # Test: attestations must NOT be pushed to the registry — push-to-registry: true creates
 # sha256-<digest> OCI referrer tags in GHCR. Attestations are verified via the GitHub
