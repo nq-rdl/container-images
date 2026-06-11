@@ -28,7 +28,7 @@ Pin by `@sha256:…` digest in production manifests.
 | Package source | Posit P3M `rhel9` binaries (`2025-05-25` snapshot) + jamovi's patched-package repo, source fallback via the build toolchain |
 | Platforms | linux/amd64 |
 
-## Differences from upstream `jamovi/jamovi deps-Dockerfile @ v2.7.30`
+## Differences from upstream `jamovi/jamovi-deps` (built from `jamovi/jamovi` `docker/deps-Dockerfile` @ v2.7.30)
 
 | Upstream (Ubuntu noble) | This image (UBI9) |
 |---|---|

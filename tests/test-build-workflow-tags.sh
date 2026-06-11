@@ -69,7 +69,13 @@ ATTEST_ALLOWLISTED_JOBS=(bake)
 extract_job_block() {
   local job="$1" file="$2"
   # Extract from '  <job>:' (two-space indent, top-level job key) to the next such line.
-  awk "/^  ${job}:/{found=1} found && /^  [a-zA-Z]/ && !/^  ${job}:/{found=0} found{print}" "$file"
+  # The job name is matched as a literal string (awk -v + string compare), never interpolated
+  # into a regex, so a future job name containing regex metacharacters cannot over-match.
+  awk -v job="$job" '
+    $0 == "  " job ":" { found=1; print; next }
+    found && /^  [a-zA-Z]/ { found=0 }
+    found { print }
+  ' "$file"
 }
 
 for job in "${ATTEST_REQUIRED_JOBS[@]}"; do

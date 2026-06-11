@@ -574,9 +574,16 @@ jobs:
         id: digest-r-base
         if: github.event_name != 'pull_request'
         run: |
+          set -euo pipefail
           digest=$(docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/r-base-ubi9:${{ env.R_VERSION }}" \
             --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: an empty/null digest would otherwise surface only as cryptic
+          # attest/sbom errors downstream and waste the one-shot retry on a bad input.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for r-base-ubi9:${R_VERSION}" >&2
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance (r-base)
@@ -641,11 +648,19 @@ jobs:
         id: digest-jamovi-deps
         if: github.event_name != 'pull_request'
         run: |
+          set -euo pipefail
           digest=$(docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9:${{ env.JAMOVI_VERSION }}" \
             --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: see the r-base digest step above.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for jamovi-deps-ubi9:${JAMOVI_VERSION}" >&2
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
+      # The jamovi-deps and jamovi attestation step groups below carry the same retry and
+      # push-to-registry semantics as the r-base group above — see its comments for the rationale.
       - name: Attest build provenance (jamovi-deps)
         id: attest-provenance-jamovi-deps
         if: github.event_name != 'pull_request'
@@ -697,9 +712,15 @@ jobs:
         id: digest-jamovi
         if: github.event_name != 'pull_request'
         run: |
+          set -euo pipefail
           digest=$(docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/jamovi-ubi9:${{ env.JAMOVI_VERSION }}" \
             --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: see the r-base digest step above.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for jamovi-ubi9:${JAMOVI_VERSION}" >&2
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance (jamovi)
