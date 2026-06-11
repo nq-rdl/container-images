@@ -9,6 +9,14 @@ variable "R_MINOR"        { default = "4.5" }
 variable "JAMOVI_VERSION" { default = "2.7.30" }
 variable "JAMOVI_MINOR"   { default = "2.7" }
 
+# "all" is the canonical target for local smoke-tests and scripts that must bake every chain.
+# When a new bake chain is added, add its group name here so scripts that bake "all" pick it up
+# automatically — do NOT hardcode individual group names in scripts/smoke-test.sh or
+# scripts/trivy-scan.sh.
+group "all" {
+  targets = ["datascience", "jamovi"]
+}
+
 group "datascience" {
   targets = ["foundation", "base-notebook", "minimal-notebook", "scipy-notebook"]
 }

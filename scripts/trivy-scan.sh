@@ -48,9 +48,8 @@ fail() {
 
 # Identify chained (bake_target) images; build them via docker buildx bake so they are
 # available for scanning. Building them standalone would fail on the unresolved
-# ${BASE_CONTAINER} ARG. Every bake group is baked (datascience + jamovi) and each target is
-# addressed by its always-present :latest tag, so this is correct regardless of each chain's
-# version scheme.
+# ${BASE_CONTAINER} ARG. The 'all' group bakes every chain and each target is addressed by its
+# always-present :latest tag, so this is correct regardless of each chain's version scheme.
 # WARNING: with RUNTIME=podman, chained images are NOT built automatically — pre-build
 # them manually in dependency order (foundation before base-notebook) using
 # --build-arg BASE_CONTAINER=<locally-built-tag>.
@@ -72,7 +71,9 @@ if [ "$RUNTIME" = "docker" ] && command -v docker >/dev/null && docker buildx ve
     done
     if [ "$_need_bake" -eq 1 ]; then
       echo "==> Baking chained images for Trivy scan: ${BAKE_DIRS[*]}"
-      docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load datascience jamovi
+      # The 'all' group covers every bake chain (datascience + jamovi + any future additions).
+      # New chains must be added to the 'all' group in docker-bake.hcl — not hardcoded here.
+      docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load all
     fi
     for d in "${BAKE_DIRS[@]}"; do
       BAKE_IMAGES+=("$d")
