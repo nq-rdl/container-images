@@ -15,8 +15,11 @@ FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:46d19c10caf9888e8a01131283ea
 
 ARG R_VERSION=4.5.0
 ARG OS_IDENTIFIER=rhel-9
+# amd64-only: image.yaml declares linux/amd64 only; arm64 would need a separate R RPM checksum.
 ARG R_SHA256=737d526ea0c72011942a963b6c5b03b01cc835bea6f302ef16b73633f84817d8
 ARG PANDOC_VERSION=2.19.2
+# amd64-only: the TARGETARCH case below has an arm64 Pandoc branch but the checksum here is
+# amd64-only — multi-arch builds require per-arch SHA256 variables.
 ARG PANDOC_SHA256=9d55c7afb6a244e8a615451ed9cb02e6a6f187ad4d169c6d5a123fa74adb4830
 ARG ALMA_GPG_KEY=https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
 ARG EPEL_GPG_KEY=https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
@@ -45,7 +48,8 @@ RUN dnf -y update \
     && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
 # Extra el9 repositories that R (and the downstream jamovi chain) require but UBI9's restricted
-# repo subset lacks: EPEL (nanomsg, glpk, libRmath) and AlmaLinux BaseOS/AppStream/CRB
+# repo subset lacks: EPEL (glpk, libRmath; nanomsg is consumed downstream in jamovi-ubi9 final
+# stage) and AlmaLinux BaseOS/AppStream/CRB
 # (flexiblas-devel — a hard dependency of Posit's R RPM — plus protobuf and boost). AlmaLinux is
 # RHEL-ABI-compatible and GPG-verified; priority=200 keeps it strictly subordinate to the UBI
 # repos so it can only supply packages Red Hat omits from UBI. These repos remain enabled (an R
@@ -54,17 +58,20 @@ RUN dnf -y update \
 # every AlmaLinux package have their signatures verified against a trusted key (no trust-on-first-
 # use gap). The AlmaLinux `/9/` baseurls float across el9 minor releases by design (el9 = stable
 # ABI, same policy as the UBI base's minor tag).
+# SC2016 false positive: $basearch is intentionally single-quoted so it lands literally in
+# the .repo file — dnf expands it at install time, not the shell.
+# hadolint ignore=SC2016
 RUN rpm --import "${ALMA_GPG_KEY}" \
     && rpm --import "${EPEL_GPG_KEY}" \
     && printf '%s\n' \
         '[alma9-baseos]' 'name=AlmaLinux 9 BaseOS' \
-        'baseurl=https://repo.almalinux.org/almalinux/9/BaseOS/x86_64/os/' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/BaseOS/$basearch/os/' \
         'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' '' \
         '[alma9-appstream]' 'name=AlmaLinux 9 AppStream' \
-        'baseurl=https://repo.almalinux.org/almalinux/9/AppStream/x86_64/os/' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/AppStream/$basearch/os/' \
         'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' '' \
         '[alma9-crb]' 'name=AlmaLinux 9 CRB' \
-        'baseurl=https://repo.almalinux.org/almalinux/9/CRB/x86_64/os/' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/CRB/$basearch/os/' \
         'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' \
         > /etc/yum.repos.d/almalinux9.repo \
     && dnf -y install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm" \

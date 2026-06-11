@@ -29,8 +29,11 @@ ARG BASE_CONTAINER=ghcr.io/nq-rdl/jamovi-deps-ubi9:2.7.30@sha256:000000000000000
 
 ARG JAMOVI_REF=771860de06a6732712043ee9a2a5c86a53a66985
 ARG NODE_VERSION=22.16.0
+# amd64-only: node-bin stage uses the linux-x64 tarball URL; arm64 would need a different URL
+# and checksum. image.yaml declares linux/amd64 only.
 ARG NODE_SHA256=f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e
 ARG PROTOC_VERSION=34.0
+# amd64-only: server stage downloads protoc-linux-x86_64.zip; arm64 would need linux-aarch_64.
 ARG PROTOC_SHA256=e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
 ARG R_VERSION=4.5.0
 
@@ -216,6 +219,9 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 # Runtime libraries not already present in the deps base: the Python 3.12 runtime, nanomsg
 # (EPEL), and the boost runtime libs the engine + core link. protobuf, cairo, libicu, libgomp,
 # libgfortran, etc. are inherited from jamovi-deps-ubi9.
+# python3.12-setuptools is a runtime requirement: the distutils-precedence.pth shim it installs
+# must exist for the .egg-info code paths in the installed jamovi packages. See the server-stage
+# comment (~line 70) for the build-time rationale.
 RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
         python3.12 python3.12-libs python3.12-setuptools \
         nanomsg protobuf boost-filesystem boost-system \

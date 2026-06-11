@@ -33,7 +33,7 @@ A three-link chain mirroring the existing `datascience` bake chain
 |---|---|---|
 | `r-base-ubi9` | `registry.access.redhat.com/ubi9/ubi:9.8` (digest-pinned) | Posit R **4.5.0** via the `rhel-9` RPM → `/opt/R/4.5.0`; fontconfig, locale, pandoc. The reusable R foundation. |
 | `jamovi-deps-ubi9` | `${BASE_CONTAINER}` → `r-base-ubi9` | ~200 CRAN packages (the two `install.packages` blocks) + system libs (apt→dnf) + `jmvReadWrite` from GitHub. |
-| `jamovi-ubi9` | `${BASE_CONTAINER}` → `jamovi-deps-ubi9` | Multi-stage: server (Cython/py3.12), client (node/vite), engine (C++), jmvcore + jmv/plots modules, i18n → assembled runtime. Exposes 41337, runs `python3 -m jamovi.server`. |
+| `jamovi-ubi9` | `${BASE_CONTAINER}` → `jamovi-deps-ubi9` | Multi-stage: server (Cython/py3.12), client (node/vite), engine (C++), jmvcore + jmv/plots modules, i18n → assembled runtime. Exposes 41337, runs `/usr/bin/python3.12 -m jamovi.server 41337 --if=*`. |
 
 ## Pins (resolved & verified 2026-06-09)
 
