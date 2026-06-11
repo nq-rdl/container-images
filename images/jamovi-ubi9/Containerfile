@@ -21,11 +21,8 @@
 #   * Final stage is `FROM ${BASE_CONTAINER}` (not an internal `r-base` alias) so the last FROM
 #     is UBI-rooted and policy/base_image.rego passes.
 #
-# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER digest (jamovi-deps-ubi9 is unpublished, so
-# tests/test-chained-bases-reachable.sh bootstrap-SKIPs it; a repin PR sets the real digest after
-# first publish). In a bake build the docker-bake.hcl contexts+args wiring overrides this with the
-# in-graph jamovi-deps target, so the digest is never resolved from the registry.
-ARG BASE_CONTAINER=ghcr.io/nq-rdl/jamovi-deps-ubi9:2.7.30@sha256:0000000000000000000000000000000000000000000000000000000000000000
+# ARG BASE_CONTAINER default: pinned to the published GHCR digest via scripts/repin-chained-base.sh.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/jamovi-deps-ubi9:2.7.30@sha256:aab6ae5817712b348e728b8d3611abdf2aeb51717a302534d8129f97e16c362a
 
 ARG JAMOVI_REF=771860de06a6732712043ee9a2a5c86a53a66985
 ARG NODE_VERSION=22.16.0

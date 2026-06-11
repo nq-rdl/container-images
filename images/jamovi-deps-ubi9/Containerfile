@@ -9,13 +9,8 @@
 #          upstream. Every package is library()-loaded after install, so a missing runtime lib or
 #          a silent repo drift fails the build instead of shipping a broken layer.
 #
-# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER digest. r-base-ubi9 is not published yet,
-# so its tag is unresolvable and tests/test-chained-bases-reachable.sh bootstrap-SKIPs this pin
-# (authenticated GHCR returns MANIFEST_UNKNOWN). A follow-up repin PR replaces the placeholder
-# with the real digest after the chain's first publish. In a bake build the docker-bake.hcl
-# `contexts` + `args` wiring overrides this with the in-graph r-base target, so the digest below
-# is never resolved from the registry.
-ARG BASE_CONTAINER=ghcr.io/nq-rdl/r-base-ubi9:4.5.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+# ARG BASE_CONTAINER default: pinned to the published GHCR digest via scripts/repin-chained-base.sh.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/r-base-ubi9:4.5.0@sha256:d454f81600ee5060cd7330e11e80d431ff38fad6cdb4606c57a4c5a571075d43
 # hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}
 
