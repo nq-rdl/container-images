@@ -59,12 +59,8 @@ fi
 # Jobs that push via 'buildx bake ... --push' or 'build-push-action ... push: true':
 #   - build        (build-push-action with push: true)
 #   - bake-jamovi  (docker buildx bake --push jamovi)
-#
-# KNOWN GAP — allowlisted:
-#   - bake          (datascience chain) predates per-job attestation; adding it is tracked as a
-#                   follow-up. This allowlist entry must be removed once that work lands.
-ATTEST_REQUIRED_JOBS=(build bake-jamovi)
-ATTEST_ALLOWLISTED_JOBS=(bake)
+#   - bake         (docker buildx bake --push datascience)
+ATTEST_REQUIRED_JOBS=(build bake-jamovi bake)
 
 extract_job_block() {
   local job="$1" file="$2"
@@ -95,16 +91,6 @@ for job in "${ATTEST_REQUIRED_JOBS[@]}"; do
     pass "job '${job}': has actions/attest-sbom"
   else
     fail "job '${job}': missing actions/attest-sbom (GitHub-native attestation avoids sha256-* ghost tags)"
-  fi
-done
-
-# Verify the allowlisted jobs exist (so a rename doesn't silently drop the known-gap marker)
-for job in "${ATTEST_ALLOWLISTED_JOBS[@]}"; do
-  block=$(extract_job_block "$job" "$WORKFLOW")
-  if [ -n "$block" ]; then
-    pass "job '${job}': allowlisted known-gap job still present (no regression)"
-  else
-    fail "job '${job}': allowlisted job not found — update ATTEST_ALLOWLISTED_JOBS if it was renamed"
   fi
 done
 
