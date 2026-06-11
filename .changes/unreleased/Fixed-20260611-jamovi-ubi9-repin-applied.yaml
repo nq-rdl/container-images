@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Repin jamovi chain BASE_CONTAINER digests from bootstrap placeholders to the published GHCR digests (jamovi-deps-ubi9 -> r-base-ubi9@sha256:d454f816…, jamovi-ubi9 -> jamovi-deps-ubi9@sha256:aab6ae58…), restoring the digest-pin reproducibility guarantee — the chained-bases reachability guard now PASSES for all five pins (0 bootstrap skips).'
+time: 2026-06-11T20:40:00.000000000+10:00

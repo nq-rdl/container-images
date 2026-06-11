@@ -36,6 +36,8 @@ policy-check-chained-bases = "bash tests/test-chained-bases-pinned.sh"
 # `policy-check` aggregate below; run it explicitly with
 # `pixi run policy-check-chained-bases-reachable`. CI runs it in validate-base-pins.yml.
 policy-check-chained-bases-reachable = "bash tests/test-chained-bases-reachable.sh"
+repin-chained-bases = "scripts/repin-chained-base.sh"
+test-repin-chained-base = "bash tests/test-repin-chained-base.sh"
 pre-commit-install = "pre-commit install --hook-type pre-commit --hook-type pre-push"
 pre-commit-run = "pre-commit run --all-files"
 trivy-scan = "scripts/trivy-scan.sh"
@@ -43,8 +45,9 @@ smoke-test = "scripts/smoke-test.sh"
 
 # Offline aggregate (no network). The network-dependent reachability guard is deliberately
 # excluded; see policy-check-chained-bases-reachable above.
+# test-repin-chained-base is offline/hermetic (stub crane, temp sandbox) and belongs here.
 [tool.pixi.tasks.policy-check]
-depends-on = ["policy-check-containerfiles", "policy-check-image-meta", "policy-check-workflow-tags", "policy-check-base-pinning", "policy-check-chained-bases"]
+depends-on = ["policy-check-containerfiles", "policy-check-image-meta", "policy-check-workflow-tags", "policy-check-base-pinning", "policy-check-chained-bases", "test-repin-chained-base"]
 
 [tool.pixi.tasks.lint-all]
 depends-on = ["lint-containerfiles", "lint-shell", "lint-actions", "policy-check"]

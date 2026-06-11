@@ -34,6 +34,50 @@ pixi run pre-commit install --hook-type pre-commit --hook-type pre-push
 3. Run `pixi run lint-all` to validate
 4. Open a PR
 
+### Chained images (bake targets)
+
+Some images are "chained": their `Containerfile` uses `ARG BASE_CONTAINER=<repo>:<tag>@sha256:<digest>`
+as the base, where the base image is another image in this repo (e.g. `jamovi-ubi9` chains on
+`jamovi-deps-ubi9`, which chains on `r-base-ubi9`). Chained images are built together via
+`docker buildx bake` — the bake graph passes the in-flight image directly through `contexts`/`args`,
+so the digest in `ARG BASE_CONTAINER` is only used when building a single image outside of bake
+(e.g. a standalone `docker build`).
+
+**Bootstrap placeholder.** A brand-new chain ships with an all-zeros digest:
+
+```
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/r-base-ubi9:4.5.0@sha256:0000…0000
+```
+
+The reachability guard (`tests/test-chained-bases-reachable.sh`) recognises a GHCR
+`MANIFEST_UNKNOWN` response (returned when the repo is authenticated but the tag does not
+exist yet) as a **bootstrap SKIP** — the chain is new and its first publish has not happened.
+The guard only fails if an authentication error, network error, or a stale/wrong digest is
+found (fail-closed semantics).
+
+**After first publish.** Once the chain's first build succeeds and the image is live on GHCR,
+the all-zeros placeholder becomes stale and the guard will start failing (`MANIFEST_UNKNOWN`
+transitions to `digest unreachable`). You **must** promptly run the repin script and open a
+follow-up PR:
+
+```bash
+# Authenticate crane to GHCR (one-off per shell session):
+echo "$GH_TOKEN" | pixi run -- crane auth login ghcr.io -u <your-github-username> --password-stdin
+
+# Repin all chained images (or pass a specific dir):
+pixi run repin-chained-bases
+# or: scripts/repin-chained-base.sh images/jamovi-ubi9
+```
+
+The script resolves each chained image's published tag to its current digest, rewrites the
+`ARG BASE_CONTAINER` default in the `Containerfile`, and updates the adjacent comment block.
+It is idempotent (safe to re-run) and fail-closed: auth failures and network errors produce a
+non-zero exit instead of silently skipping. After the script completes:
+
+1. Run `pixi run policy-check-chained-bases-reachable` — it should PASS.
+2. Add a changie fragment (`changie new`).
+3. Commit and open the follow-up PR.
+
 ## Image naming convention
 
 Images follow the pattern `{service}-ubi{major}:{service_version}`.

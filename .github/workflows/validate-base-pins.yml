@@ -2,10 +2,10 @@ name: Validate Base Pins
 
 on:
   pull_request:
-    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
+    paths: ['images/**', 'tests/**', 'scripts/repin-chained-base.sh', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
   push:
     branches: [main]
-    paths: ['images/**', 'tests/**', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
+    paths: ['images/**', 'tests/**', 'scripts/repin-chained-base.sh', 'pyproject.toml', '.github/workflows/validate-base-pins.yml']
 
 permissions:
   contents: read
@@ -39,6 +39,13 @@ jobs:
       # check rather than the inline jq pipe further down with a cryptic error.
       - name: Ensure jq is installed (used by the index/platform checks below)
         run: command -v jq >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y jq)
+
+      # Offline: no network, no crane needed. Tests scripts/repin-chained-base.sh end-to-end with a
+      # stub crane, covering error-class discrimination, digest-format validation, path normalisation,
+      # and comment updating. Placed before the registry-querying checks so a broken script fails
+      # fast, without spending any network round-trips first.
+      - name: Test repin-chained-base script (offline, hermetic)
+        run: bash tests/test-repin-chained-base.sh
 
       - name: Assert each pinned base is an index covering declared platforms
         run: |
