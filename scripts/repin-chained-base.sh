@@ -136,9 +136,11 @@ for cf in "${CFS[@]}"; do
     # a BOOTSTRAP PLACEHOLDER" through the line immediately before "ARG BASE_CONTAINER=") with a
     # single concise note. Perl range delete: match the opening line of the block and delete
     # through (not including) the ARG line.
+    # $1 captures the prefix (start-of-file or a newline) and is re-emitted verbatim, so a
+    # placeholder block at byte 0 of the file does not gain a spurious leading blank line.
     perl -0pi -e '
-      s{(?:^|\n)(# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER[^\n]*(?:\n#[^\n]*)*)(\nARG BASE_CONTAINER=)}{
-        "\n# ARG BASE_CONTAINER default: pinned to the published GHCR digest via scripts/repin-chained-base.sh." . $2
+      s{(^|\n)(# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER[^\n]*(?:\n#[^\n]*)*)(\nARG BASE_CONTAINER=)}{
+        $1 . "# ARG BASE_CONTAINER default: pinned to the published GHCR digest via scripts/repin-chained-base.sh." . $3
       }em
     ' "$cf"
     # Verify the replacement took effect (if it did, BOOTSTRAP PLACEHOLDER is gone).

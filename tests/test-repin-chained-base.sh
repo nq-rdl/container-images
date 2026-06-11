@@ -14,11 +14,16 @@
 #   (e) empty stdout        — original does not guard; rewrites a broken ARG line
 #   (f) garbage stdout      — original does not guard; rewrites a broken ARG line
 #   (g) path normalisation  — original appends /Containerfile twice, silently skipping the image
+#   (i) network error       — original classifies as bootstrap skip and exits 0
 #
 # Cases that should already pass in the original (kept for regression):
 #   (a) MANIFEST_UNKNOWN    — bootstrap SKIP, exit 0
 #   (d) already-pinned      — OK, file byte-identical
 #   (h) no @sha256: in val  — SKIP, exit 0
+#
+# Cases that exercise behavior introduced by the fixed script (meaningless pre-fix):
+#   (j) bespoke comment     — digest repinned, non-matching comment preserved, NOTE emitted
+#   (k) byte-0 comment      — comment rewrite injects no leading blank line at file start
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/scripts/repin-chained-base.sh"
@@ -422,7 +427,8 @@ fi
 # CASE (j): comment idempotence — a Containerfile whose comment block does NOT match the
 # BOOTSTRAP PLACEHOLDER wording (already repinned, or bespoke comment) is left untouched.
 # The digest is still updated; only the unknown comment block is left alone.
-# Also verify the 'Next:' output mentions the unmatched comment.
+# Also verify the NOTE output flags the unmatched comment so the operator knows it was not
+# auto-updated.
 # ---------------------------------------------------------------------------
 echo ""
 echo "=== (j) comment idempotence — non-matching comment block left alone ==="
@@ -450,6 +456,43 @@ if grep -qF "$BESPOKE_COMMENT" "$SANDBOX/images/test-img-j/Containerfile"; then
   pass_case "(j) bespoke comment: non-matching comment preserved"
 else
   fail_case "(j) bespoke comment: non-matching comment was modified or removed"
+fi
+# The script must surface the unmatched comment via its NOTE output, so the operator knows the
+# comment was not auto-updated and may need a manual touch-up.
+if grep -qF "NOTE: BOOTSTRAP PLACEHOLDER comment not found or already updated" <<<"$OUTPUT"; then
+  pass_case "(j) bespoke comment: NOTE about unmatched comment emitted"
+else
+  fail_case "(j) bespoke comment: missing NOTE about unmatched comment (output: $OUTPUT)"
+fi
+
+# ---------------------------------------------------------------------------
+# CASE (k): placeholder block at byte 0 of the file — the comment rewrite must not inject a
+# spurious leading blank line. make_cf always emits header lines first (as the real jamovi
+# Containerfiles do), so this fixture is built manually with the placeholder block as the very
+# first line.
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== (k) placeholder block at byte 0 — no leading blank line injected on repin ==="
+reset_images
+mkdir -p "$SANDBOX/images/test-img-k"
+{
+  printf '%s\n' "$PLACEHOLDER_COMMENT_BLOCK"
+  printf 'ARG BASE_CONTAINER=%s\n' "ghcr.io/nq-rdl/r-base-ubi9:4.5.0@${PLACEHOLDER_DIGEST}"
+  # shellcheck disable=SC2016  # literal ${BASE_CONTAINER} is intentional — Containerfile syntax
+  printf 'FROM ${BASE_CONTAINER}\n'
+} > "$SANDBOX/images/test-img-k/Containerfile"
+CRANE_MODE=new_digest run_script_rc "images/test-img-k"
+if grep -qF "ghcr.io/nq-rdl/r-base-ubi9:4.5.0@${NEW_DIGEST}" "$SANDBOX/images/test-img-k/Containerfile"; then
+  pass_case "(k) byte-0 comment block: digest updated"
+else
+  fail_case "(k) byte-0 comment block: digest NOT updated (output: $OUTPUT)"
+fi
+first_char=$(head -c 1 "$SANDBOX/images/test-img-k/Containerfile")
+if [ "$first_char" = "#" ]; then
+  pass_case "(k) byte-0 comment block: file still starts with the comment (no blank line)"
+else
+  fail_case "(k) byte-0 comment block: leading blank line injected (first line: '$(head -1 "$SANDBOX/images/test-img-k/Containerfile")')"
+  RED_CASES+=("(k) byte-0 comment block -> spurious leading blank line")
 fi
 
 # ---------------------------------------------------------------------------
