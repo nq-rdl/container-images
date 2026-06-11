@@ -486,3 +486,308 @@ jobs:
               "${src}@${digest}"
             echo "Published aliases for ${alias}: ${TAG}, ${MINOR}, latest"
           done
+
+  bake-jamovi:
+    # The jamovi chain (r-base -> jamovi-deps -> jamovi) is a heavy in-graph bake: ~200 R packages
+    # compiled and a multi-stage C++/Cython/vite app build. Kept in its own job (separate from the
+    # datascience bake) so its runtime and failures are isolated. gha cache (mode=max, per-image
+    # scope) keeps unchanged rebuilds fast.
+    runs-on: ubuntu-latest
+    env:
+      # Keep in sync with docker-bake.hcl and the image.yaml tags.
+      R_VERSION: "4.5.0"
+      R_MINOR: "4.5"
+      JAMOVI_VERSION: "2.7.30"
+      JAMOVI_MINOR: "2.7"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bake the jamovi chain
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            docker buildx bake --file docker-bake.hcl --load jamovi
+          else
+            docker buildx bake --file docker-bake.hcl --push jamovi
+          fi
+
+      - name: Trivy scan (r-base)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/r-base-ubi9:${{ env.R_VERSION }}
+          format: sarif
+          output: trivy-r-base-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (r-base)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-r-base-ubi9.sarif
+          category: trivy-r-base-ubi9
+
+      - name: Trivy scan (jamovi-deps)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9:${{ env.JAMOVI_VERSION }}
+          format: sarif
+          output: trivy-jamovi-deps-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (jamovi-deps)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-jamovi-deps-ubi9.sarif
+          category: trivy-jamovi-deps-ubi9
+
+      - name: Trivy scan (jamovi)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9:${{ env.JAMOVI_VERSION }}
+          format: sarif
+          output: trivy-jamovi-ubi9.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+      - name: Upload Trivy results (jamovi)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-jamovi-ubi9.sarif
+          category: trivy-jamovi-ubi9
+
+      # ── Attestation: r-base-ubi9 ─────────────────────────────────────────────────────────────
+      - name: Resolve digest (r-base)
+        id: digest-r-base
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/r-base-ubi9:${{ env.R_VERSION }}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: an empty/null digest would otherwise surface only as cryptic
+          # attest/sbom errors downstream and waste the one-shot retry on a bad input.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for r-base-ubi9:${R_VERSION}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance (r-base)
+        id: attest-provenance-r-base
+        if: github.event_name != 'pull_request'
+        # continue-on-error lets the retry step below absorb transient Sigstore/Rekor
+        # failures (e.g. "error creating tlog entry") without failing the whole build.
+        # The retry gates on steps.<id>.outcome (NOT conclusion): continue-on-error forces
+        # conclusion to 'success', so only outcome still reports the real 'failure'.
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/r-base-ubi9
+          subject-digest: ${{ steps.digest-r-base.outputs.digest }}
+          # Not pushed to GHCR (push creates sha256-<digest> referrer tags); verified via the GitHub attestation API instead.
+          push-to-registry: false
+
+      - name: Attest build provenance (r-base) (retry)
+        # One retry on transient Sigstore/Rekor failures. If this also fails the build fails.
+        if: github.event_name != 'pull_request' && steps.attest-provenance-r-base.outcome == 'failure'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/r-base-ubi9
+          subject-digest: ${{ steps.digest-r-base.outputs.digest }}
+          push-to-registry: false
+
+      - name: Generate SBOM (r-base)
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/r-base-ubi9@${{ steps.digest-r-base.outputs.digest }}
+          # CycloneDX JSON is materially more compact than SPDX JSON. actions/attest-sbom
+          # rejects SBOMs larger than 16 MiB; the StarRocks allin1 image's SPDX SBOM
+          # exceeded that (~17.3 MiB), whereas its CycloneDX SBOM is ~10.4 MiB.
+          format: cyclonedx-json
+          output-file: sbom-r-base-ubi9.cdx.json
+
+      - name: Attest SBOM (r-base)
+        id: attest-sbom-r-base
+        if: github.event_name != 'pull_request'
+        # See the provenance step above: retry below absorbs transient Sigstore/Rekor failures.
+        continue-on-error: true
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/r-base-ubi9
+          subject-digest: ${{ steps.digest-r-base.outputs.digest }}
+          sbom-path: sbom-r-base-ubi9.cdx.json
+          push-to-registry: false
+
+      - name: Attest SBOM (r-base) (retry)
+        # One retry on transient Sigstore/Rekor failures. If this also fails the build fails.
+        if: github.event_name != 'pull_request' && steps.attest-sbom-r-base.outcome == 'failure'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/r-base-ubi9
+          subject-digest: ${{ steps.digest-r-base.outputs.digest }}
+          sbom-path: sbom-r-base-ubi9.cdx.json
+          push-to-registry: false
+
+      # ── Attestation: jamovi-deps-ubi9 ────────────────────────────────────────────────────────
+      - name: Resolve digest (jamovi-deps)
+        id: digest-jamovi-deps
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9:${{ env.JAMOVI_VERSION }}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: see the r-base digest step above.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for jamovi-deps-ubi9:${JAMOVI_VERSION}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      # The jamovi-deps and jamovi attestation step groups below carry the same retry and
+      # push-to-registry semantics as the r-base group above — see its comments for the rationale.
+      - name: Attest build provenance (jamovi-deps)
+        id: attest-provenance-jamovi-deps
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9
+          subject-digest: ${{ steps.digest-jamovi-deps.outputs.digest }}
+          push-to-registry: false
+
+      - name: Attest build provenance (jamovi-deps) (retry)
+        if: github.event_name != 'pull_request' && steps.attest-provenance-jamovi-deps.outcome == 'failure'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9
+          subject-digest: ${{ steps.digest-jamovi-deps.outputs.digest }}
+          push-to-registry: false
+
+      - name: Generate SBOM (jamovi-deps)
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9@${{ steps.digest-jamovi-deps.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-jamovi-deps-ubi9.cdx.json
+
+      - name: Attest SBOM (jamovi-deps)
+        id: attest-sbom-jamovi-deps
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9
+          subject-digest: ${{ steps.digest-jamovi-deps.outputs.digest }}
+          sbom-path: sbom-jamovi-deps-ubi9.cdx.json
+          push-to-registry: false
+
+      - name: Attest SBOM (jamovi-deps) (retry)
+        if: github.event_name != 'pull_request' && steps.attest-sbom-jamovi-deps.outcome == 'failure'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-deps-ubi9
+          subject-digest: ${{ steps.digest-jamovi-deps.outputs.digest }}
+          sbom-path: sbom-jamovi-deps-ubi9.cdx.json
+          push-to-registry: false
+
+      # ── Attestation: jamovi-ubi9 ─────────────────────────────────────────────────────────────
+      - name: Resolve digest (jamovi)
+        id: digest-jamovi
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/jamovi-ubi9:${{ env.JAMOVI_VERSION }}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')
+          # Fail loudly here: see the r-base digest step above.
+          if [ -z "${digest}" ] || [ "${digest}" = "null" ]; then
+            echo "ERROR: could not resolve digest for jamovi-ubi9:${JAMOVI_VERSION}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance (jamovi)
+        id: attest-provenance-jamovi
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9
+          subject-digest: ${{ steps.digest-jamovi.outputs.digest }}
+          push-to-registry: false
+
+      - name: Attest build provenance (jamovi) (retry)
+        if: github.event_name != 'pull_request' && steps.attest-provenance-jamovi.outcome == 'failure'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9
+          subject-digest: ${{ steps.digest-jamovi.outputs.digest }}
+          push-to-registry: false
+
+      - name: Generate SBOM (jamovi)
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9@${{ steps.digest-jamovi.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-jamovi-ubi9.cdx.json
+
+      - name: Attest SBOM (jamovi)
+        id: attest-sbom-jamovi
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9
+          subject-digest: ${{ steps.digest-jamovi.outputs.digest }}
+          sbom-path: sbom-jamovi-ubi9.cdx.json
+          push-to-registry: false
+
+      - name: Attest SBOM (jamovi) (retry)
+        if: github.event_name != 'pull_request' && steps.attest-sbom-jamovi.outcome == 'failure'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/jamovi-ubi9
+          subject-digest: ${{ steps.digest-jamovi.outputs.digest }}
+          sbom-path: sbom-jamovi-ubi9.cdx.json
+          push-to-registry: false
+
+      - name: Publish convenience aliases
+        if: github.event_name != 'pull_request'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          publish() {  # $1=image  $2=version  $3=minor
+            local name="$1" ver="$2" minor="$3" alias src digest
+            [[ "$name" =~ ^(.+)-ubi([0-9]+)$ ]] || return 0
+            alias="${BASH_REMATCH[1]}"
+            src="ghcr.io/${OWNER}/${name}"
+            digest=$(docker buildx imagetools inspect "${src}:${ver}" --format '{{json .Manifest}}' | jq -r '.digest')
+            docker buildx imagetools create \
+              --tag "ghcr.io/${OWNER}/${alias}:${ver}" \
+              --tag "ghcr.io/${OWNER}/${alias}:${minor}" \
+              --tag "ghcr.io/${OWNER}/${alias}:latest" \
+              "${src}@${digest}"
+            echo "Published aliases for ${alias}: ${ver}, ${minor}, latest"
+          }
+          publish r-base-ubi9      "${R_VERSION}"      "${R_MINOR}"
+          publish jamovi-deps-ubi9 "${JAMOVI_VERSION}" "${JAMOVI_MINOR}"
+          publish jamovi-ubi9      "${JAMOVI_VERSION}" "${JAMOVI_MINOR}"

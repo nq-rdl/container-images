@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.7
+#
+# jamovi-deps on UBI9 (chained on r-base-ubi9).
+# Blueprint: jamovi/jamovi docker/deps-Dockerfile @ v2.7.30 (FROM rstudio/r-base:4.5.0-noble).
+# Changes: FROM rstudio/r-base -> ${BASE_CONTAINER} (r-base-ubi9); apt system libs -> dnf
+#          (UBI9 + EPEL + AlmaLinux repos inherited from r-base-ubi9); CRAN_MIRROR retargeted
+#          from Posit P3M `noble` binaries to `rhel9` binaries (source fallback via the installed
+#          -devel toolchain); the two install.packages() blocks + jmvReadWrite are verbatim from
+#          upstream. Every package is library()-loaded after install, so a missing runtime lib or
+#          a silent repo drift fails the build instead of shipping a broken layer.
+#
+# ARG BASE_CONTAINER default: a BOOTSTRAP PLACEHOLDER digest. r-base-ubi9 is not published yet,
+# so its tag is unresolvable and tests/test-chained-bases-reachable.sh bootstrap-SKIPs this pin
+# (authenticated GHCR returns MANIFEST_UNKNOWN). A follow-up repin PR replaces the placeholder
+# with the real digest after the chain's first publish. In a bake build the docker-bake.hcl
+# `contexts` + `args` wiring overrides this with the in-graph r-base target, so the digest below
+# is never resolved from the registry.
+ARG BASE_CONTAINER=ghcr.io/nq-rdl/r-base-ubi9:4.5.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+# hadolint ignore=DL3026
+FROM ${BASE_CONTAINER}
+
+LABEL org.opencontainers.image.title="jamovi-deps-ubi9"
+LABEL org.opencontainers.image.description="jamovi R-package dependency layer on UBI9 (R 4.5.0 + ~200 CRAN packages)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Posit P3M snapshot (rhel9 binaries) + jamovi's patched-package repo. The HTTPUserAgent makes
+# P3M serve precompiled rhel9 binaries; anything only on the jamovi source repo compiles via the
+# toolchain installed below.
+ENV CRAN_MIRROR=https://packagemanager.posit.co/cran/__linux__/rhel9/2025-05-25 \
+    JAMOVI_REPO=https://repo.jamovi.org/cran/2025-05-25
+
+# System libraries for the CRAN set: compiler toolchain + -devel headers (source-build fallback
+# for packages with no rhel9 binary, e.g. jamovi's patched ones) and the runtime shared libs the
+# binaries link against. protobuf/boost come from AlmaLinux, glpk from EPEL (both inherited from
+# r-base, priority=200). Kept installed (the final jamovi image is built on top and reuses them).
+RUN dnf -y install --setopt=install_weak_deps=0 --nodocs \
+        gcc gcc-c++ gcc-gfortran make \
+        openssl-devel libcurl-devel libxml2-devel \
+        fontconfig-devel freetype-devel harfbuzz-devel fribidi-devel \
+        libpng-devel libjpeg-turbo-devel libtiff-devel cairo-devel \
+        gmp-devel glpk-devel protobuf-devel \
+        mesa-libGL-devel mesa-libGLU-devel \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+# Point R at the jamovi + P3M repos and enable P3M binary resolution via the platform User-Agent.
+RUN { \
+        echo "options(repos=c(jr='${JAMOVI_REPO}', pm='${CRAN_MIRROR}'))"; \
+        echo "options(HTTPUserAgent=sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version[['platform']], R.version[['arch']], R.version[['os']])))"; \
+    } >> "${R_HOME}/etc/Rprofile.site"
+
+# Block 1 — base / plotting / reporting CRAN packages (verbatim from deps-Dockerfile).
+RUN R -e "\
+    packages <- c('R6', 'RColorBrewer', 'backports', 'base64enc', 'brio', 'cpp11', 'curl', \
+        'devEMF', 'evaluate', 'farver', 'fastmap', 'fontBitstreamVera', \
+        'fontLiberation', 'magrittr', 'praise', 'rappdirs', 'rprojroot', 'sys', 'utf8', \
+        'uuid', 'viridisLite', 'yaml', 'zip', 'Rcpp', 'askpass', 'cli', 'crayon', \
+        'data.table', 'digest', 'fansi', 'fontquiver', 'fs', 'generics', 'glue', \
+        'isoband', 'jsonlite', 'labeling', 'mime', 'pkgconfig', 'ps', 'remotes', \
+        'rlang', 'stargazer', 'stringi', 'withr', 'xfun', 'xtable', 'RInside', \
+        'RProtoBuf', 'cachem', 'desc', 'diffobj', 'highr', 'htmltools', 'lifecycle', \
+        'openssl', 'openxlsx', 'processx', 'tinytex', 'xml2', 'callr', 'fontawesome', \
+        'gtable', 'jquerylib', 'knitr', 'memoise', 'sass', 'scales', 'systemfonts', \
+        'vctrs', 'waldo', 'bslib', 'gdtools', 'pillar', 'pkgbuild', 'purrr', 'stringr', \
+        'textshaping', 'tidyselect', 'pkgload', 'ragg', 'rmarkdown', 'tibble', 'dplyr', \
+        'ggplot2', 'htmlwidgets', 'officer', 'testthat', 'flextable', 'rvg', \
+        'tidyr', 'broom', 'export'); \
+    for (pkg in packages) {               \
+        install.packages(                 \
+            pkg,                          \
+            depends=FALSE,                \
+            lib='${R_HOME}/library',      \
+            INSTALL_opts='--no-data --no-help --no-demo --no-html --no-docs --no-multiarch --clean'); \
+        library(pkg, character.only=TRUE); \
+    }"
+
+# Block 2 — statistics / igraph-dependent CRAN packages (verbatim from deps-Dockerfile).
+RUN R -e "\
+    packages <- c('BH', 'RcppParallel', 'bitops', 'ca', 'carData', 'contfrac', 'glasso', 'jpeg', \
+        'lisrelToR', 'matrixStats', 'mnormt', 'nloptr', 'numDeriv', 'pbivnorm', 'png', \
+        'prettyunits', 'quadprog', 'qvcalc', 'rematch', 'rstudioapi', 'Deriv', \
+        'Formula', 'GPArotation', 'Matrix', 'PMCMR', 'RUnit', 'RcppEigen', 'SparseM', \
+        'TH.data', 'XML', 'abind', 'caTools', 'cellranger', 'checkmate', 'coda', \
+        'colorspace', 'corpcor', 'cowplot', 'deSolve', 'elliptic', 'estimability', \
+        'fdrtool', 'forcats', 'ggrepel', 'ggridges', 'gridExtra', 'gtools', 'here', \
+        'hms', 'lavaan', 'microbenchmark', 'minqa', 'modelr', 'mvnormtest', 'mvtnorm', \
+        'patchwork', 'pbapply', 'plyr', 'rbibutils', 'relimp', 'ssanv', 'zoo', \
+        'MatrixModels', 'Rdpack', 'StanHeaders', 'doBy', 'emmeans', 'exactci', \
+        'ggstats', 'gnm', 'gplots', 'htmlTable', 'hypergeo', 'igraph', 'kutils', \
+        'lmtest', 'progress', 'psych', 'reshape2', 'rpf', 'sandwich', 'viridis', \
+        'BayesFactor', 'GGally', 'Hmisc', 'OpenMx', 'ROCR', 'exact2x2', 'multcomp', \
+        'quantreg', 'readxl', 'reformulas', 'vcd', 'lme4', 'qgraph', 'vcdExtra', 'arm', \
+        'lmerTest', 'pbkrtest', 'rockchalk', 'car', 'mi', 'afex', 'sem', 'semPlot'); \
+    for (pkg in packages) {               \
+        install.packages(                 \
+            pkg,                          \
+            depends=FALSE,                \
+            lib='${R_HOME}/library',      \
+            INSTALL_opts='--no-data --no-help --no-demo --no-html --no-docs --no-multiarch --clean'); \
+        library(pkg, character.only=TRUE); \
+    }"
+
+# jmvReadWrite — jamovi's read/write helper, pinned to the same commit as upstream deps-Dockerfile.
+RUN R -e "\
+    remotes::install_github( \
+        'sjentsch/jmvReadWrite', \
+        ref='dcc7ecc5772d24c33ddbe7852a2bd6934bdf7635', \
+        lib='${R_HOME}/library'); \
+    if ( ! requireNamespace('jmvReadWrite')) quit(status = 1);"

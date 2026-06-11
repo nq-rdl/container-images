@@ -1,0 +1,23 @@
+name: jamovi-ubi9
+description: jamovi statistical spreadsheet (server) on UBI9 — jamovi v2.7.30
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: ghcr.io
+  repository: nq-rdl/jamovi-deps-ubi9
+  version: "2.7.30"
+runtime:
+  name: jamovi
+  version: "2.7.30"
+tags:
+  - "2.7.30"
+  - "2.7"
+  - "latest"
+depends_on: jamovi-deps-ubi9
+bake_target: jamovi
+support:
+  status: stable
+  eol: "2027-06-30"

@@ -66,19 +66,23 @@ echo "==> Phase 1: Building images with ${RUNTIME}"
 declare -a BUILT=()
 
 # Build bake_target (chained) images via docker buildx bake; map their tags into BUILT.
+# The 'all' group bakes every chain and each target is addressed by its always-present :latest
+# tag (bake emits :version, :minor AND :latest per target), so this stays correct regardless of
+# each chain's version scheme (datascience=2026.6.0, jamovi=4.5.0/2.7.30).
 # WARNING: with RUNTIME=podman, chained images are NOT built automatically — pre-build
 # them manually in dependency order (foundation before base-notebook) using
 # --build-arg BASE_CONTAINER=<locally-built-tag>.
-BAKE_TAG="${TAG:-2026.6.0}"
 BAKE_IMAGES=()
 if [ "$RUNTIME" = "docker" ] && command -v docker >/dev/null && docker buildx version >/dev/null 2>&1; then
   mapfile -t BAKE_DIRS < <(grep -lR --include=image.yaml 'bake_target:' "$IMAGES_DIR" | xargs -r -n1 dirname)
   if [ "${#BAKE_DIRS[@]}" -gt 0 ]; then
     echo "==> Baking chained images: ${BAKE_DIRS[*]}"
-    docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load datascience
+    # The 'all' group covers every bake chain (datascience + jamovi + any future additions).
+    # New chains must be added to the 'all' group in docker-bake.hcl — not hardcoded here.
+    docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load all
     for d in "${BAKE_DIRS[@]}"; do
       name=$(basename "$d")
-      tag="ghcr.io/nq-rdl/${name}:${BAKE_TAG}"
+      tag="ghcr.io/nq-rdl/${name}:latest"
       BAKE_IMAGES+=("$d")
       BUILT+=("${tag}|${name}|${d}")
     done

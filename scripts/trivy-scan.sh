@@ -48,21 +48,32 @@ fail() {
 
 # Identify chained (bake_target) images; build them via docker buildx bake so they are
 # available for scanning. Building them standalone would fail on the unresolved
-# ${BASE_CONTAINER} ARG.
+# ${BASE_CONTAINER} ARG. The 'all' group bakes every chain and each target is addressed by its
+# always-present :latest tag, so this is correct regardless of each chain's version scheme.
 # WARNING: with RUNTIME=podman, chained images are NOT built automatically — pre-build
 # them manually in dependency order (foundation before base-notebook) using
 # --build-arg BASE_CONTAINER=<locally-built-tag>.
-BAKE_TAG="${TAG:-2026.6.0}"
 BAKE_IMAGES=()
 if [ "$RUNTIME" = "docker" ] && command -v docker >/dev/null && docker buildx version >/dev/null 2>&1; then
   mapfile -t BAKE_DIRS < <(grep -lR --include=image.yaml 'bake_target:' "$IMAGES_DIR" | xargs -r -n1 dirname)
   if [ "${#BAKE_DIRS[@]}" -gt 0 ]; then
-    # Only bake if not already present in the local daemon (e.g. smoke ran first).
-    _first_bake_name=$(basename "${BAKE_DIRS[0]}")
-    _first_bake_tag="ghcr.io/nq-rdl/${_first_bake_name}:${BAKE_TAG}"
-    if ! docker image inspect "$_first_bake_tag" &>/dev/null; then
+    # Skip baking only if EVERY bake-target image is already loaded in the local daemon (e.g.
+    # smoke-test.sh baked them first). Checking just the first image is wrong: with more than one
+    # bake group, one group can be present (e.g. datascience) while another (jamovi) is absent —
+    # we would skip the bake, then the scan loop below would reference ghcr.io/...:latest tags
+    # that were never built.
+    _need_bake=0
+    for d in "${BAKE_DIRS[@]}"; do
+      if ! docker image inspect "ghcr.io/nq-rdl/$(basename "$d"):latest" &>/dev/null; then
+        _need_bake=1
+        break
+      fi
+    done
+    if [ "$_need_bake" -eq 1 ]; then
       echo "==> Baking chained images for Trivy scan: ${BAKE_DIRS[*]}"
-      docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load datascience
+      # The 'all' group covers every bake chain (datascience + jamovi + any future additions).
+      # New chains must be added to the 'all' group in docker-bake.hcl — not hardcoded here.
+      docker buildx bake --file "${REPO_ROOT}/docker-bake.hcl" --load all
     fi
     for d in "${BAKE_DIRS[@]}"; do
       BAKE_IMAGES+=("$d")
@@ -78,7 +89,7 @@ for cf in "${CONTAINERFILES[@]}"; do
   # Chained images were bake-built above with their canonical ghcr.io tag; skip the
   # standalone build path that would fail on the unresolved ${BASE_CONTAINER} ARG.
   if printf '%s\n' "${BAKE_IMAGES[@]:-}" | grep -qx "$dir"; then
-    tag="ghcr.io/nq-rdl/${name}:${BAKE_TAG}"
+    tag="ghcr.io/nq-rdl/${name}:latest"
   else
     tag="localhost/smoke-test/${name}:latest"
     if ! "$RUNTIME" image inspect "$tag" &>/dev/null; then

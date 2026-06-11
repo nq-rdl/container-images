@@ -1,0 +1,22 @@
+name: r-base-ubi9
+description: Posit R 4.5.0 runtime on UBI9 (the rstudio/r-base / posit/r-base equivalent)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi
+  version: "9.8"
+runtime:
+  name: R
+  version: "4.5.0"
+tags:
+  - "4.5.0"
+  - "4.5"
+  - "latest"
+bake_target: r-base
+support:
+  status: stable
+  eol: "2027-06-30"

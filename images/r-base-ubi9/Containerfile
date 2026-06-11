@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.7
+#
+# r-base on UBI9 — Posit R 4.5.0 (the rstudio/r-base / posit/r-base equivalent).
+# Blueprint: rstudio/r-docker base/rockylinux9 + 4.5/rockylinux9 (https://github.com/rstudio/r-docker).
+# Changes: rockylinux:9 -> ubi9/ubi (digest-pinned); R installed from Posit's rhel-9 RPM
+#          (OS_IDENTIFIER=rhel-9) to /opt/R/4.5.0 — the exact R_HOME jamovi-deps hard-codes;
+#          the rstudio template's `crb` enable is REPLACED (UBI has no `crb` repo id — its
+#          codeready-builder subset also lacks flexiblas-devel/protobuf/boost) with EPEL +
+#          AlmaLinux 9 repos at priority=200 (UBI/Red Hat packages always win; AlmaLinux only
+#          fills the gaps UBI's restricted subset omits). Pandoc pinned + checksum-verified;
+#          TinyTeX intentionally NOT pre-installed (the downstream `tinytex` R package bootstraps
+#          TeX Live on demand) to keep the base lean. See README for the supply-chain rationale.
+#
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:46d19c10caf9888e8a01131283eaaf50c7f5d4eddab02cd92a66f8adf2e15407
+
+ARG R_VERSION=4.5.0
+ARG OS_IDENTIFIER=rhel-9
+# amd64-only: image.yaml declares linux/amd64 only; arm64 would need a separate R RPM checksum.
+ARG R_SHA256=737d526ea0c72011942a963b6c5b03b01cc835bea6f302ef16b73633f84817d8
+ARG PANDOC_VERSION=2.19.2
+# amd64-only: the TARGETARCH case below has an arm64 Pandoc branch but the checksum here is
+# amd64-only — multi-arch builds require per-arch SHA256 variables.
+ARG PANDOC_SHA256=9d55c7afb6a244e8a615451ed9cb02e6a6f187ad4d169c6d5a123fa74adb4830
+ARG ALMA_GPG_KEY=https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+ARG EPEL_GPG_KEY=https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-9
+ARG TARGETARCH
+
+LABEL org.opencontainers.image.title="r-base-ubi9"
+LABEL org.opencontainers.image.description="Posit R ${R_VERSION} runtime on UBI9 (rstudio/r-base equivalent)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Base OS libraries R expects at runtime (Posit base/rockylinux9 parity, minus interactive
+# tooling): fontconfig for graphics devices, an explicit en_US.UTF-8 langpack, perl-File-Find
+# (used by some R build/check paths), and the tar/gzip/xz/wget download toolchain.
+RUN dnf -y update \
+    && dnf -y install --setopt=install_weak_deps=0 --nodocs \
+        fontconfig \
+        glibc-langpack-en \
+        perl-File-Find \
+        tar \
+        gzip \
+        xz \
+        wget \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+# Extra el9 repositories that R (and the downstream jamovi chain) require but UBI9's restricted
+# repo subset lacks: EPEL (glpk, libRmath; nanomsg is consumed downstream in jamovi-ubi9 final
+# stage) and AlmaLinux BaseOS/AppStream/CRB
+# (flexiblas-devel — a hard dependency of Posit's R RPM — plus protobuf and boost). AlmaLinux is
+# RHEL-ABI-compatible and GPG-verified; priority=200 keeps it strictly subordinate to the UBI
+# repos so it can only supply packages Red Hat omits from UBI. These repos remain enabled (an R
+# base is expected to carry EPEL); the foreign-provenance footprint is bounded to the gap set.
+# Pre-import both GPG keys BEFORE any package install so the epel-release RPM (fetched by URL) and
+# every AlmaLinux package have their signatures verified against a trusted key (no trust-on-first-
+# use gap). The AlmaLinux `/9/` baseurls float across el9 minor releases by design (el9 = stable
+# ABI, same policy as the UBI base's minor tag).
+# SC2016 false positive: $basearch is intentionally single-quoted so it lands literally in
+# the .repo file — dnf expands it at install time, not the shell.
+# hadolint ignore=SC2016
+RUN rpm --import "${ALMA_GPG_KEY}" \
+    && rpm --import "${EPEL_GPG_KEY}" \
+    && printf '%s\n' \
+        '[alma9-baseos]' 'name=AlmaLinux 9 BaseOS' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/BaseOS/$basearch/os/' \
+        'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' '' \
+        '[alma9-appstream]' 'name=AlmaLinux 9 AppStream' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/AppStream/$basearch/os/' \
+        'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' '' \
+        '[alma9-crb]' 'name=AlmaLinux 9 CRB' \
+        'baseurl=https://repo.almalinux.org/almalinux/9/CRB/$basearch/os/' \
+        'gpgcheck=1' "gpgkey=${ALMA_GPG_KEY}" 'priority=200' 'enabled=1' \
+        > /etc/yum.repos.d/almalinux9.repo \
+    && dnf -y install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm" \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+# Pandoc — the document converter behind rmarkdown/knitr. Pinned + checksum-verified.
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) PANDOC_ARCH=amd64 ;; \
+        arm64) PANDOC_ARCH=arm64 ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/pandoc.tar.gz \
+        "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${PANDOC_ARCH}.tar.gz"; \
+    echo "${PANDOC_SHA256}  /tmp/pandoc.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/pandoc.tar.gz -C /opt; \
+    mv "/opt/pandoc-${PANDOC_VERSION}" /opt/pandoc; \
+    ln -s /opt/pandoc/bin/pandoc /usr/local/bin/pandoc; \
+    rm -f /tmp/pandoc.tar.gz; \
+    /usr/local/bin/pandoc --version | head -1
+
+# R from Posit's prebuilt rhel-9 binary (installs to /opt/R/${R_VERSION}). flexiblas-devel and
+# other dependencies resolve from the AlmaLinux/EPEL repos configured above. The RPM is
+# checksum-verified before install.
+RUN curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "/tmp/R-${R_VERSION}.rpm" \
+        "https://cdn.posit.co/r/${OS_IDENTIFIER}/pkgs/R-${R_VERSION}-1-1.$(arch).rpm" \
+    && echo "${R_SHA256}  /tmp/R-${R_VERSION}.rpm" | sha256sum -c - \
+    && dnf -y install "/tmp/R-${R_VERSION}.rpm" \
+    && ln -s "/opt/R/${R_VERSION}/bin/R" /usr/bin/R \
+    && ln -s "/opt/R/${R_VERSION}/bin/Rscript" /usr/bin/Rscript \
+    && rm -f "/tmp/R-${R_VERSION}.rpm" \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/yum \
+    && R --version
+
+ENV LANG=en_US.UTF-8 \
+    TZ=UTC \
+    R_HOME=/opt/R/${R_VERSION}/lib/R
+
+CMD ["R"]
