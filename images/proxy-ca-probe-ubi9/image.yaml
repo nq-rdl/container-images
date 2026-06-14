@@ -1,0 +1,19 @@
+name: proxy-ca-probe-ubi9
+description: Diagnostic probe for the uniform proxy + CA-trust contract (issue #59)
+owners:
+  - nq-rdl/platform
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi
+  version: "9.8"
+runtime:
+  name: proxy-ca-probe
+tags:
+  - "0.1.0"
+  - "0.1"
+  - "latest"
+support:
+  status: experimental
+  eol: "2027-06-30"
