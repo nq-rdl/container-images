@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+# proxy-ca-probe-ubi9 — DIAGNOSTIC image for issue #59. Not a runtime product:
+# it carries every TLS toolchain the catalog uses (openssl/curl/git/python/
+# node/java) and reports, as filable bugs, whether each trusts the corporate
+# inspection CA and egresses through the proxy. amd64 only.
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:46d19c10caf9888e8a01131283eaaf50c7f5d4eddab02cd92a66f8adf2e15407
+
+LABEL org.opencontainers.image.title="proxy-ca-probe-ubi9"
+LABEL org.opencontainers.image.description="Diagnostic probe for the uniform proxy + CA-trust contract (issue #59)"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# Toolchains under test. java-17-openjdk-devel ships javac so we can PRECOMPILE the
+# Java probe — JRE-only target images (e.g. zulu*-jre-headless) lack a compiler and
+# cannot run `java TlsProbe.java` (single-file source launch needs jdk.compiler), so
+# we ship a .class and run it with `java -cp`. nodejs:20 from the UBI appstream module.
+# ca-certificates/curl-minimal are listed explicitly to document the full toolchain set
+# under test even though the full ubi9/ubi base already ships them (not missing deps).
+RUN dnf -y module enable nodejs:20 \
+ && dnf -y install --setopt=install_weak_deps=False \
+      ca-certificates openssl curl-minimal git-core \
+      python3 python3-pip python3-requests \
+      nodejs java-17-openjdk-devel \
+ && dnf clean all && rm -rf /var/cache/yum /var/cache/dnf
+
+# The probe image is the REFERENCE implementation of the C-1 contract block.
+ENV SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt \
+    REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt \
+    CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt \
+    PIP_CERT=/etc/pki/tls/certs/ca-bundle.crt \
+    GIT_SSL_CAINFO=/etc/pki/tls/certs/ca-bundle.crt \
+    NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/corp-ca.crt
+
+COPY proxy-ca-probe.py /usr/local/bin/proxy-ca-probe
+COPY helpers/ /usr/local/lib/proxy-ca-probe/helpers/
+ENV PROBE_HELPERS_DIR=/usr/local/lib/proxy-ca-probe/helpers
+# Precompile the Java probe so JRE-only images (no javac) can run `java -cp ... TlsProbe`.
+RUN chmod +x /usr/local/bin/proxy-ca-probe \
+ && javac /usr/local/lib/proxy-ca-probe/helpers/TlsProbe.java
+
+# Run as the same hardened shape the catalog targets: non-root, GID 0.
+RUN useradd -u 1001 -g 0 -m -s /sbin/nologin probe
+USER 1001
+WORKDIR /home/probe
+ENTRYPOINT ["proxy-ca-probe"]
+CMD ["--report", "human"]
