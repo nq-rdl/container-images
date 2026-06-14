@@ -228,3 +228,10 @@ __marimo__/
 
 # Local build output
 _output/
+
+# issue #59 proxy-ca MITM fixture: throwaway CA material, never commit
+tests/proxy-ca/.ca/
+# but DO track the fixture library (the generic Python `lib/` rule above would
+# otherwise ignore tests/proxy-ca/lib/).
+!tests/proxy-ca/lib/
+!tests/proxy-ca/lib/**
