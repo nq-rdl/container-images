@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add go-ubi9 image: Go toolchain on UBI9-minimal for CGO_ENABLED=0 static builds (resolves #57)'
+time: 2026-06-14T12:04:26.174844723+10:00
