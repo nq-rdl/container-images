@@ -53,10 +53,15 @@ RUN set -eux; \
 # GOTOOLCHAIN=local pins this image to GO_VERSION: Go will not silently download a different
 # toolchain when a consumer's go.mod requests a newer one. GOPATH/GOCACHE live under the
 # non-root home so module downloads and the build cache are writable as uid 1001.
+# CGO_ENABLED=0 makes the static-build contract explicit: this image ships no C compiler, so a
+# plain `go build` must not attempt cgo (net/os/user etc.). Go already defaults cgo off when no
+# compiler is present, but pinning it here guarantees it regardless of Go's heuristic; consumers
+# who add a compiler can opt back in with CGO_ENABLED=1.
 ENV GOROOT=/usr/local/go \
     GOPATH=/home/app/go \
     GOCACHE=/home/app/.cache/go-build \
     GOTOOLCHAIN=local \
+    CGO_ENABLED=0 \
     PATH="/usr/local/go/bin:/home/app/go/bin:${PATH}" \
     LANG=C.UTF-8
 
