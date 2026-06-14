@@ -1,0 +1,21 @@
+name: nginx-ubi9
+description: nginx static-file/SPA web server on UBI9 micro (non-root, :8080)
+owners:
+  - nq-rdl/platform
+  - nq-rdl/frontend
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-micro
+  version: "9.5"
+runtime:
+  name: nginx
+  version: "1.26.3"
+tags:
+  - "1.26"
+  - "1.26.3"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-12-31"
