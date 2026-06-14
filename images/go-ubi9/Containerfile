@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.7
+#
+# Go toolchain on UBI9-minimal
+# Blueprint: official golang image (golang:1.24); rdl-portal backend/Dockerfile build stage
+# Changes: base image swap (golang:alpine -> UBI9-minimal), install the official go.dev
+#          tarball verified against a git-pinned SHA256 (the bun-ubi9 idiom), non-root user
+#
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:a50731d3397a4ee28583f1699842183d4d24fadcc565c4688487af9ee4e13a44
+
+# Latest stable Go. Issue #57 says "track the latest stable toolchain"; Go 1.24 is EOL with
+# unpatched stdlib CVEs, and a newer toolchain still builds rdl-portal's `go 1.24` modules.
+ARG GO_VERSION=1.26.4
+# Pinned in git (not fetched next to the tarball) so the integrity check is anchored to a
+# human-reviewed value rather than whatever the download server serves at build time.
+# From https://go.dev/dl/?mode=json — go${GO_VERSION}.linux-<arch>.tar.gz.
+ARG GO_SHA256_AMD64=1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f
+ARG GO_SHA256_ARM64=ef758ae7c6cf9267c9c0ef080b8965f453d89ab2d25d9eb22de4405925238768
+ARG TARGETARCH
+
+LABEL org.opencontainers.image.title="go-ubi9"
+LABEL org.opencontainers.image.description="Go ${GO_VERSION} toolchain on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+
+# git-core + ca-certificates support `go mod download` over HTTPS/VCS (git-core is the slim
+# git without the perl/email/gui extras — the dbt-ubi9 convention). gcc and glibc headers are
+# intentionally omitted: consumers build CGO_ENABLED=0 static binaries (see issue #57).
+RUN microdnf install -y --nodocs \
+        ca-certificates \
+        git-core \
+        tar \
+        gzip \
+        shadow-utils \
+        glibc-langpack-en \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) GO_ARCH=amd64; GO_SHA256="${GO_SHA256_AMD64}" ;; \
+        arm64) GO_ARCH=arm64; GO_SHA256="${GO_SHA256_ARM64}" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/go.tar.gz \
+        "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
+    echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum --strict --check -; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm -f /tmp/go.tar.gz; \
+    /usr/local/go/bin/go version
+
+# GOTOOLCHAIN=local pins this image to GO_VERSION: Go will not silently download a different
+# toolchain when a consumer's go.mod requests a newer one. GOPATH/GOCACHE live under the
+# non-root home so module downloads and the build cache are writable as uid 1001.
+ENV GOROOT=/usr/local/go \
+    GOPATH=/home/app/go \
+    GOCACHE=/home/app/.cache/go-build \
+    GOTOOLCHAIN=local \
+    PATH="/usr/local/go/bin:/home/app/go/bin:${PATH}" \
+    LANG=C.UTF-8
+
+# Non-root toolchain user in the root group (gid 0) with group-writable caches, the catalog
+# convention (see bun-ubi9 / zulu17-jdk-ubi9) and OpenShift arbitrary-uid friendly.
+RUN useradd -u 1001 -g 0 -m -d /home/app -s /sbin/nologin app \
+    && mkdir -p "${GOPATH}" "${GOCACHE}" \
+    && chown -R 1001:0 /home/app \
+    && chmod -R g=u /home/app
+
+USER 1001
+WORKDIR /home/app
+
+ENTRYPOINT ["go"]
+CMD ["version"]

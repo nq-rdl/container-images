@@ -1,0 +1,21 @@
+name: go-ubi9
+description: Go toolchain on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/backend
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.5"
+runtime:
+  name: go
+  version: "1.26.4"
+tags:
+  - "1.26"
+  - "1.26.4"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-02-28"
