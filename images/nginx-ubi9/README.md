@@ -53,25 +53,29 @@ COPY --from=builder /app/build /usr/share/nginx/html
 
 ### Adding an in-cluster API reverse proxy (optional)
 
-The base config intentionally ships **no** `/api/` proxy — the upstream is consumer-specific.
-Add one by layering an extra server-fragment, e.g.:
+The base config intentionally ships **no** `/api/` proxy — the upstream is consumer-specific. An
+nginx `location` must live inside a `server { }` block, so nginx will not merge a stray snippet
+into the shipped server automatically. The cleanest way to add a proxy is to **replace**
+`/etc/nginx/conf.d/default.conf` with your own copy that keeps the SPA setup and adds the
+`/api/` location:
 
 ```dockerfile
-COPY api-proxy.conf /etc/nginx/conf.d/api-proxy.conf
+COPY default.conf /etc/nginx/conf.d/default.conf   # your copy, based on the image's default
 ```
 
 ```nginx
-# api-proxy.conf — included into the :8080 server is not automatic; instead replace
-# default.conf, or proxy from a sibling location block. Example upstream:
-location /api/ {
-    proxy_pass         http://rdl-backend.rdl.svc:80/;
-    proxy_http_version 1.1;
-    proxy_set_header   Host $host;
+# your default.conf — the same :8080 server, plus an /api/ proxy
+server {
+    listen 8080;
+    # ... SPA fallback, security headers and /health, copied from the image's default.conf ...
+
+    location /api/ {
+        proxy_pass         http://rdl-backend.rdl.svc:80/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+    }
 }
 ```
-
-> To extend the existing server block (rather than add a second server), replace
-> `/etc/nginx/conf.d/default.conf` with your own copy that includes the `/api/` location.
 
 ## Verify
 
