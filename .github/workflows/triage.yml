@@ -16,5 +16,4 @@ jobs:
     uses: nq-rdl/.github/.github/workflows/auto-triage.yml@d9e70f7d2866e2c126660b924e4e5421e8dbaaba
     with:
       domain: Infrastructure
-      lead: rowdenbr
     secrets: inherit
