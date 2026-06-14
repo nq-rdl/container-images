@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add nginx-ubi9 image: non-root nginx SPA/static-file server on UBI9-micro, :8080 (resolves #58)'
+time: 2026-06-14T12:12:57.681425515+10:00
