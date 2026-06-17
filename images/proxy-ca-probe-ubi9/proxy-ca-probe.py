@@ -59,7 +59,7 @@ def build_report(checks):
                "skipped": sum(c["status"] == "skip" for c in checks)}
     return {"schema_version": SCHEMA_VERSION,
             "target_url": os.environ.get("TARGET_URL", ""),
-            "proxy": os.environ.get("HTTPS_PROXY", os.environ.get("https_proxy", "")),
+            "proxy": os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy", ""),
             "summary": summary, "checks": checks}
 
 
@@ -124,13 +124,25 @@ def _proxy():
     return os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
 
+def _default_port(scheme):
+    # Default proxy port by URL scheme, matching curl/python/node (which use the
+    # scheme default when the proxy URL omits a port). An https:// proxy => 443,
+    # anything else (http:// and the empty/unknown scheme) => 80.
+    return 443 if scheme == "https" else 80
+
+
 def _openssl_cmd(host, port, proxy_host, proxy_port, proxy_user=None,
                  proxy_pass=None):
     # `-proxy` takes a BARE host:port (no scheme/creds). Credentials route to
     # -proxy_user/-proxy_pass; -proxy_pass is a password SOURCE, so the decoded
     # password is wrapped as "pass:<password>" (a bare password makes OpenSSL
     # abort with "Invalid password argument" before connecting).
-    cmd = ["openssl", "s_client", "-connect", f"{host}:{port}",
+    # An IPv6 literal target host (urlparse strips the brackets) must be
+    # re-bracketed in -connect ([::1]:8443); openssl can't parse a bare
+    # "::1:8443". -servername keeps the bare host: SNI is not sent for IP
+    # literals, so the brackets would only confuse it.
+    connect_host = f"[{host}]" if ":" in host else host
+    cmd = ["openssl", "s_client", "-connect", f"{connect_host}:{port}",
            "-servername", host, "-proxy", f"{proxy_host}:{proxy_port}",
            "-verify_return_error", "-brief"]
     if proxy_user:
@@ -207,7 +219,7 @@ def run_live_checks(checks):
     #    looks like a TLS-verify failure - a distinct failure mode).
     if shutil.which("openssl"):
         cmd = _openssl_cmd(
-            host, port, pu.hostname, pu.port or 8080,
+            host, port, pu.hostname, pu.port or _default_port(pu.scheme),
             proxy_user=urllib.parse.unquote(pu.username) if pu.username else None,
             proxy_pass=urllib.parse.unquote(pu.password or "") if pu.username else None)
         r = _run(cmd, input="")

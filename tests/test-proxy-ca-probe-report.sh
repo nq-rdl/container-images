@@ -209,5 +209,51 @@ assert c["remediation"], "forced fail must carry a remediation"
 ' && pass "(l) forced-fail self-test keeps remediation" \
   || fail "(l) forced-fail self-test remediation"
 
+# (m) M1: the openssl proxy-port default must follow the proxy URL SCHEME so it
+# agrees with curl/python/node. A port-less http:// proxy => :80 (NOT :8080);
+# a port-less https:// proxy => :443; an explicit port is preserved verbatim.
+python3 - <<'PY' && pass "(m) proxy-port default follows scheme" || fail "(m) proxy-port default follows scheme"
+import importlib.util, urllib.parse
+spec = importlib.util.spec_from_file_location("probe","images/proxy-ca-probe-ubi9/proxy-ca-probe.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+def target(proxy_url):
+    pu = urllib.parse.urlparse(proxy_url)
+    return f"{pu.hostname}:{pu.port or m._default_port(pu.scheme)}"
+assert target("http://proxy.corp") == "proxy.corp:80", target("http://proxy.corp")
+assert target("https://proxy.corp") == "proxy.corp:443", target("https://proxy.corp")
+assert target("http://proxy.corp:3128") == "proxy.corp:3128", target("http://proxy.corp:3128")
+PY
+
+# (n) M2: an IPv6-literal openssl target must bracket the host in -connect
+# ([::1]:8443), which openssl requires; -servername keeps the bare host (no SNI
+# for IP literals). A normal hostname stays unbracketed.
+python3 - <<'PY' && pass "(n) openssl -connect brackets IPv6 literal" || fail "(n) openssl -connect brackets IPv6 literal"
+import importlib.util
+spec = importlib.util.spec_from_file_location("probe","images/proxy-ca-probe-ubi9/proxy-ca-probe.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+cmd = m._openssl_cmd("::1", 8443, "proxy.corp", 8080)
+i = cmd.index("-connect")
+assert cmd[i+1] == "[::1]:8443", cmd[i+1]
+j = cmd.index("-servername")
+assert cmd[j+1] == "::1", cmd[j+1]
+cmd2 = m._openssl_cmd("example.com", 443, "proxy.corp", 8080)
+k = cmd2.index("-connect")
+assert cmd2[k+1] == "example.com:443", cmd2[k+1]
+PY
+
+# (o) M3: the report's top-level `proxy` field must mirror _proxy() semantics:
+# an empty HTTPS_PROXY falls through to https_proxy (dict.get only falls back
+# on an ABSENT key, so a present-but-empty HTTPS_PROXY must not mask the value).
+# HTTPS_PROXY= deliberately sets a PRESENT-but-empty var for the probe's env
+# (the very condition under test), so the SC1007 empty-assignment hint is moot.
+# shellcheck disable=SC1007
+out="$(HTTPS_PROXY= https_proxy=http://p.test:8080 python3 "$PROBE" --self-test --report json)"
+echo "$out" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert d["proxy"] == "http://p.test:8080", repr(d["proxy"])
+' && pass "(o) report proxy field mirrors _proxy()" \
+  || fail "(o) report proxy field mirrors _proxy()"
+
 if [ "$FAILURES" -gt 0 ]; then echo "${FAILURES} probe-report failure(s)"; exit 1; fi
 echo "probe report contract OK"; exit 0
