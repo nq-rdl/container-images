@@ -4,6 +4,9 @@
 # toolchain once the MITM CA is folded into the system trust (Tier-2 update-ca-trust).
 set -euo pipefail
 [ -d images ] || { echo "ERROR: run from repo root"; exit 1; }
+# python3 backs the JSON assertions below; fail fast (clear message) instead of
+# letting set -e abort late at the first python3 call if it is missing.
+command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
 source tests/proxy-ca/lib/mitm.sh
 RUNTIME="${RUNTIME:-docker}"
 FAILURES=0
@@ -52,8 +55,12 @@ else
   fail "(a) probe exited non-zero but system-bundle trust check did not fail (see $OUT)"
 fi
 
-# (b) WITH the CA folded in. Tier-2 `update-ca-trust extract` (run as root here)
-#     regenerates BOTH the PEM bundle and the system Java cacerts the JDK symlinks to.
+# (b) WITH the CA folded in. Tier-2 `update-ca-trust extract` needs root, so the
+#     container runs as root JUST to extract trust (regenerating BOTH the PEM bundle
+#     and the system Java cacerts the JDK symlinks to), then `runuser -u probe`
+#     drops to the image's non-root user (uid 1001 / GID 0) for the actual probe run
+#     so (b)/(b2) validate the catalog's hardened non-root shape. runuser without -l
+#     preserves the container env vars the probe relies on (TARGET_URL/HTTPS_PROXY/...).
 #     Fix 1: the JVM ignores HTTPS_PROXY, so route Java through the proxy explicitly via
 #       JAVA_TOOL_OPTIONS (otherwise its "pass" wouldn't be a through-proxy result).
 #     Fix 2: git SKIPs unless TARGET_GIT_URL is a real remote -> set one so (b2) can
@@ -64,7 +71,7 @@ if "$RUNTIME" run "${common[@]}" \
   -e JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=${MITM_NAME} -Dhttps.proxyPort=8080 -Dhttp.proxyHost=${MITM_NAME} -Dhttp.proxyPort=8080" \
   -v "$(pwd)/${CA_DIR}/corp-ca.crt:/etc/pki/ca-trust/source/anchors/corp-ca.crt:ro" \
   --user 0 --entrypoint /bin/bash proxy-ca-probe-ubi9:dev \
-  -c 'update-ca-trust extract && proxy-ca-probe --report json' \
+  -c 'update-ca-trust extract && runuser -u probe -- proxy-ca-probe --report json' \
   >"$OUT/r_cafold.json" 2>"$OUT/r_cafold.err"; then
   pass "(b) probe passes with CA folded in"
 else
