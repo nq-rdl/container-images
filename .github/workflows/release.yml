@@ -136,6 +136,11 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          # Refuse annotated/signed tags: moving them would drop annotation/signature metadata.
+          if [ "$(git cat-file -t "$TAG")" = "tag" ]; then
+            echo "::error::Annotated/signed tags are not supported by this workflow. Create and push a lightweight tag instead (e.g. 'git tag vX.Y.Z')."
+            exit 1
+          fi
           git tag -f "$TAG"
           git push origin "$TAG" --force
 
