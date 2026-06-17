@@ -169,6 +169,68 @@ A soft reminder appears on `git commit` if no fragment exists. On `git push`, th
 check is enforced — pushes are blocked until a fragment is added. If a PR genuinely
 needs no changelog entry, bypass with `SKIP_CHANGELOG=1 git push`.
 
+The same check runs in CI on every PR (`.github/workflows/changelog-check.yml`),
+which the local pre-push hook cannot be made to skip from a forked PR. To skip it
+for a PR that needs no entry, apply the `skip-changelog` label.
+
+## Releasing
+
+A release is a changelog + GitHub Release marker **for the repository**. Container
+images are published continuously by `build.yml` (tagged by *service* version, e.g.
+`jamovi 1.1.42`) and are **not** tied to repository releases — a `vX.Y.Z` tag never
+rebuilds images.
+
+To cut a release:
+
+1. Make sure every change you want included has a changie fragment in
+   `.changes/unreleased/` (enforced on PRs by `changelog-check.yml`).
+2. Choose the next version per [SemVer](https://semver.org) and the changie kinds
+   in `.changie.yaml` (`Added`/`Deprecated` → minor, `Changed`/`Removed` → major,
+   `Fixed`/`Security` → patch).
+3. Tag a commit that is **already on `main`** and push the tag:
+
+   ```bash
+   git tag v0.1.0 <commit-on-main>
+   git push origin v0.1.0
+   ```
+
+The `release.yml` workflow then:
+
+1. Verifies the tag points to a commit on `main` (refuses otherwise).
+2. Runs `changie batch <version>` + `changie merge`, folding the unreleased
+   fragments into `.changes/<version>.md` and regenerating `CHANGELOG.md`.
+3. Commits the changelog to `main` and force-moves the tag onto that commit, so
+   the released tag includes the generated changelog.
+4. Creates a GitHub Release using `.changes/<version>.md` as the release notes.
+
+The workflow authenticates as the `nq-rdl-release-bot` GitHub App
+(`vars.RELEASE_APP_ID` + `secrets.RELEASE_APP_PRIVATE_KEY`) and skips its own
+re-triggered runs (the tag-move push), so releases do not loop. The App must be
+installed on this repository with write access so it can push the changelog commit
+to the PR-protected `main` branch — the sibling repos (`agent-skills`,
+`agent-extensions`) use the same App under the same classic branch protection, so
+no ruleset bypass is required.
+
+The changelog push is resilient to `main` advancing mid-release: it replays the
+single changelog commit onto the current tip and retries, so a PR merging during
+the run does not abort the release with a non-fast-forward rejection.
+
+**Retrying a failed release.** Most transient failures are safe to retry by
+re-running the failed job. If a run fails *after* it already pushed the changelog
+commit to `main` (so `.changes/<version>.md` is now on `main` but the tag was not
+moved), re-point the tag onto the current `main` tip and force-push it:
+
+```bash
+git fetch origin main
+git tag -f v0.1.0 origin/main
+git push origin v0.1.0 --force
+```
+
+The re-run checks out that commit, detects the pre-batched `.changes/<version>.md`,
+skips re-batching, and just creates the release. If a fix PR added a *new* fragment
+in the meantime, the workflow stops with guidance rather than overwriting the
+batched file — resolve as it instructs.
+
 ## Smoke tests
 
 On `git push`, a smoke test runs automatically (via pre-commit pre-push hook)
