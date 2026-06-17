@@ -43,10 +43,13 @@ def check(checks, *, id, toolchain, category, status, expected="", actual="",
 
 def run_self_test(checks):
     forced = os.environ.get("PROBE_FORCE_FAIL") == "1"
+    # Invariant: a 'pass' check carries empty remediation; only the forced 'fail'
+    # gets an (actionable) remediation.
     check(checks, id="self-test", toolchain="probe", category="meta",
           status="fail" if forced else "pass",
           detail="forced failure" if forced else "self-test ok",
-          remediation="n/a")
+          remediation="unset PROBE_FORCE_FAIL to clear this forced self-test failure"
+          if forced else "")
 
 
 def build_report(checks):
@@ -98,19 +101,49 @@ def _normalize_fp(s):
     return s.replace(":", "").lower()
 
 
+def _as_text(x):
+    # TimeoutExpired buffers stdout/stderr as bytes even under text=True, so
+    # normalize to str before concatenating the synthetic timeout message.
+    if isinstance(x, bytes):
+        return x.decode("utf-8", "replace")
+    return x or ""
+
+
 def _run(cmd, **kw):
     try:
         return subprocess.run(cmd, capture_output=True, text=True,
                               timeout=CMD_TIMEOUT, **kw)
     except subprocess.TimeoutExpired as e:
-        return subprocess.CompletedProcess(cmd, 124, e.stdout or "",
-                                           (e.stderr or "") + " timed out")
+        return subprocess.CompletedProcess(cmd, 124, _as_text(e.stdout),
+                                           _as_text(e.stderr) + " timed out")
     except OSError as e:
         return subprocess.CompletedProcess(cmd, 127, "", str(e))
 
 
 def _proxy():
     return os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+
+
+def _openssl_cmd(host, port, proxy_host, proxy_port, proxy_user=None,
+                 proxy_pass=None):
+    # `-proxy` takes a BARE host:port (no scheme/creds). Credentials route to
+    # -proxy_user/-proxy_pass; -proxy_pass is a password SOURCE, so the decoded
+    # password is wrapped as "pass:<password>" (a bare password makes OpenSSL
+    # abort with "Invalid password argument" before connecting).
+    cmd = ["openssl", "s_client", "-connect", f"{host}:{port}",
+           "-servername", host, "-proxy", f"{proxy_host}:{proxy_port}",
+           "-verify_return_error", "-brief"]
+    if proxy_user:
+        cmd += ["-proxy_user", proxy_user,
+                "-proxy_pass", "pass:" + (proxy_pass or "")]
+    return cmd
+
+
+def _curl_cmd(target):
+    # TLS/proxy-only probe: NO -f/--fail. An HTTP 4xx from a reachable target means
+    # TLS + proxy egress already succeeded, so -f would file a false CA/proxy bug.
+    # Keep -sS so real connection/TLS errors still produce a nonzero exit.
+    return ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", target]
 
 
 def run_live_checks(checks):
@@ -160,20 +193,23 @@ def run_live_checks(checks):
 
     host = urllib.parse.urlparse(target).hostname
     port = urllib.parse.urlparse(target).port or 443
+    if not host:
+        check(checks, id="target-url", toolchain="probe", category="meta",
+              status="fail", expected="https://host[:port]/...", actual=target,
+              detail="TARGET_URL has no hostname (invalid URL or missing scheme)",
+              remediation="set TARGET_URL to an absolute https URL, e.g. https://example.com")
+        return
     pu = urllib.parse.urlparse(_proxy())
-    hostport = f"{pu.hostname}:{pu.port or 8080}"
 
     # 4. openssl s_client through the proxy. `-proxy` takes a BARE host:port, so we
     #    parse host/port from the URL and route any credentials to -proxy_user/
     #    -proxy_pass instead of stripping them (else an authenticated corp proxy
     #    looks like a TLS-verify failure - a distinct failure mode).
     if shutil.which("openssl"):
-        cmd = ["openssl", "s_client", "-connect", f"{host}:{port}",
-               "-servername", host, "-proxy", hostport,
-               "-verify_return_error", "-brief"]
-        if pu.username:
-            cmd += ["-proxy_user", urllib.parse.unquote(pu.username),
-                    "-proxy_pass", urllib.parse.unquote(pu.password or "")]
+        cmd = _openssl_cmd(
+            host, port, pu.hostname, pu.port or 8080,
+            proxy_user=urllib.parse.unquote(pu.username) if pu.username else None,
+            proxy_pass=urllib.parse.unquote(pu.password or "") if pu.username else None)
         r = _run(cmd, input="")
         _verdict(checks, "openssl", "tls-via-proxy", r.returncode == 0,
                  r.stderr.strip()[-200:],
@@ -182,7 +218,7 @@ def run_live_checks(checks):
 
     # 5. curl
     if shutil.which("curl"):
-        r = _run(["curl", "-fsS", "-o", "/dev/null", "-w", "%{http_code}", target])
+        r = _run(_curl_cmd(target))
         _verdict(checks, "curl", "https-via-proxy", r.returncode == 0,
                  (r.stdout + r.stderr).strip()[-200:], "curl TLS verify failed (CURL_CA_BUNDLE / proxy)")
 
@@ -252,6 +288,9 @@ def _bundle_fingerprints(path):
             if r.returncode == 0:
                 fps.add(_normalize_fp(r.stdout.split("=")[-1].strip()))
     except Exception:
+        # Best-effort: fingerprinting is an optional cross-check, so any read/parse
+        # failure (missing bundle, unreadable file, malformed PEM) returns whatever
+        # was collected so far - an empty or partial set - instead of crashing the probe.
         pass
     return fps
 
