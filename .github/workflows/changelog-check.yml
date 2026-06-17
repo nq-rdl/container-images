@@ -11,13 +11,13 @@ permissions:
 jobs:
   check-changie-fragment:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Check for unreleased changie fragment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
