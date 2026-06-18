@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add proxy-ca-probe-ubi9 amd64 diagnostic image for the issue #59 proxy + CA-trust contract'
+time: 2026-06-14T13:45:17.981409293+10:00
