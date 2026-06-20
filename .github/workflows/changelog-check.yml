@@ -1,0 +1,35 @@
+name: Changelog Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-changie-fragment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for unreleased changie fragment
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          FRAGMENTS=$(git diff --name-only --diff-filter=A "$BASE_SHA"..."$HEAD_SHA" -- '.changes/unreleased/*.yaml')
+
+          if [ -z "$FRAGMENTS" ]; then
+            echo "::error::No changie fragment found. Please run 'changie new' and commit the generated file in .changes/unreleased/."
+            echo ""
+            echo "If this PR does not need a changelog entry, add the 'skip-changelog' label."
+            exit 1
+          fi
+
+          echo "Found changie fragment(s):"
+          echo "$FRAGMENTS"
