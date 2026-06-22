@@ -15,7 +15,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: imjasonh/setup-crane@v0.6
 
       # Authenticate to GHCR so a not-yet-published chained base (a brand-new chain's first PR)
