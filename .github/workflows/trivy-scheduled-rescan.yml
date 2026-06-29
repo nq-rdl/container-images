@@ -16,7 +16,7 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install yq
         run: |
@@ -57,7 +57,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: docker/login-action@v4
         with:
@@ -100,7 +100,7 @@ jobs:
             tag: '2025.04.8412'
             slug: writerside-builder
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Public Docker Hub image — no auth needed. If anonymous pull rate limits on
       # shared runners become a problem, add a docker/login-action@v4 step with
