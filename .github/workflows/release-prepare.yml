@@ -1,0 +1,157 @@
+name: Release — Prepare PR
+
+# Manually-triggered first half of the release. Produces a reviewable
+# `release/v<version>` PR that batches the changelog and stamps VERSION.
+# Nothing is published here — merging the PR is what cuts the release (see
+# release-finalize.yml). This replaces the old "push a v* tag" entry point
+# (release.yml): the version you used to type as a git tag you now type once
+# into the `version` input below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, no leading v (e.g. 0.1.0). Batched explicitly — no auto-bump."
+        required: true
+        type: string
+
+# All writes go through the GitHub App token so the resulting PR's events are
+# attributed to the app (not GITHUB_TOKEN) and therefore DO trigger the
+# validation and changelog-check workflows on the release PR.
+permissions:
+  contents: read
+
+# One prepare run per version: simultaneous same-version dispatches serialize
+# (the second then fails cleanly on the branch-exists precondition) instead of
+# racing the branch push. Scoped per version because GitHub keeps only one
+# PENDING run per concurrency group — a global group would let a third
+# dispatch silently cancel a queued run for an unrelated version.
+concurrency:
+  group: release-prepare-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Mint a least-privilege token (omitting these grants the App's full
+          # installation set): push the release branch (contents), open the PR
+          # (pull-requests), ensure the skip-changelog label (issues). Checkout
+          # persists this token into .git/config, where later steps can read
+          # it — keep its scope minimal.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Validate version and preconditions
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be X.Y.Z with no leading v. Got: '$VERSION'"
+            exit 1
+          fi
+
+          # Monotonic version guard: a typo like 0.0.1 would otherwise pass and
+          # downgrade the project. Compare semver-aware (GNU sort -V, so 0.9.0 <
+          # 0.10.0) against the current VERSION file.
+          CURRENT_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ "$VERSION" = "$CURRENT_VERSION" ]; then
+            echo "::error::version $VERSION equals current VERSION ($CURRENT_VERSION); nothing to release."
+            exit 1
+          fi
+          LOWER="$(printf '%s\n%s\n' "$VERSION" "$CURRENT_VERSION" | sort -V | head -n1)"
+          if [ "$LOWER" != "$CURRENT_VERSION" ]; then
+            echo "::error::version $VERSION is not greater than current VERSION ($CURRENT_VERSION); refusing to downgrade."
+            exit 1
+          fi
+
+          # Refuse to start if this version is already in flight or shipped.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists."; exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::branch release/v$VERSION already exists."; exit 1
+          fi
+          if [ -f ".changes/$VERSION.md" ]; then
+            echo "::error::.changes/$VERSION.md already exists on main."; exit 1
+          fi
+          # Must have something to ship.
+          if [ -z "$(ls .changes/unreleased/ 2>/dev/null | grep -v .gitkeep)" ]; then
+            echo "::error::No unreleased changie fragments to batch."; exit 1
+          fi
+
+      - name: Install changie
+        uses: miniscruff/changie-action@v3
+        with:
+          version: latest
+
+      - name: Batch changelog and stamp version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Batch the explicit version (same semantics as the old tag flow's
+          # `changie batch "$version"`), then rebuild CHANGELOG.md from the
+          # per-version files.
+          changie batch "$VERSION"
+          changie merge
+
+          # VERSION is the single version source — write it, and keep
+          # pyproject.toml's version in lockstep.
+          echo "$VERSION" > VERSION
+          if [ -f pyproject.toml ]; then
+            sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+          fi
+
+      - name: Open release PR
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add -A
+          git commit -m "chore: release v$VERSION — batch changelog, bump version"
+          git push -u origin "$BRANCH"
+
+          # `gh pr create --label` hard-fails on a missing label, so create
+          # skip-changelog only if absent — no --force, so a maintainer's
+          # customization of an existing label's color/description is never
+          # silently reset. (The App token needs issues:write for this.)
+          if ! gh api "repos/{owner}/{repo}/labels/skip-changelog" --silent >/dev/null 2>&1; then
+            gh label create skip-changelog \
+              --color ededed \
+              --description "PR intentionally ships no changelog fragment (release PRs, docs-only, CI)"
+          fi
+
+          # skip-changelog: this PR consumes the unreleased fragments rather than
+          # adding one, so changelog-check.yml must not require a new fragment.
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "Release v$VERSION" \
+            --label skip-changelog \
+            --body "Automated release PR for **v$VERSION**.
+
+          Merging this PR into \`main\` tags \`v$VERSION\` on the squash-merge commit and publishes the GitHub release (release-finalize.yml). Review the batched changelog and \`VERSION\` below.
+
+          Generated by the \`Release — Prepare PR\` workflow."

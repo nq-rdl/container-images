@@ -1,0 +1,183 @@
+name: Release — Finalize on merge
+
+# Second half of the release. Fires when a `release/v*` PR is merged into main
+# (squash merge is fine — the squash commit carries VERSION + .changes/<v>.md).
+# It tags that commit and publishes the GitHub release. It never pushes to main:
+# all release content already landed via the merged PR. Authorization to release
+# == authorization to merge the PR, which branch protection already gates.
+#
+# Idempotency: the "derive and verify version" step distinguishes three states
+# so a re-run (e.g. after a transient failure) does the right thing instead of
+# either erroring out or double-publishing:
+#   1. release_exists (tag AND GitHub release both present) -> full no-op,
+#      both the tag-push and release-creation steps are skipped.
+#   2. tag_exists but the release is missing -> the tag is verified to point
+#      at this PR's merge commit (hard-fail on a foreign tag), then only the
+#      release is created; the tag push is skipped.
+#   3. neither exists -> push the annotated tag, then create the release.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+# Least-privilege: the default GITHUB_TOKEN stays read-only at the workflow
+# level; the finalize job elevates to contents:write as belt-and-suspenders for
+# softprops/action-gh-release. The tag push and the release creation themselves
+# use the App token.
+permissions:
+  contents: read
+
+# Serialize finalize runs per release branch. Every closed PR on main enters
+# this workflow before the job-level gate, and GitHub keeps only ONE pending
+# run per concurrency group (older pending runs are cancelled when a new one
+# queues) — so a global group would let any unrelated PR-close silently cancel
+# a queued release finalize. Per-head-ref groups mean re-runs for the same
+# version still serialize, while other events can never cancel a release.
+concurrency:
+  group: release-finalize-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    # Only act on a merged (not just closed) release PR, and only when the head
+    # branch lives in this repo — release PRs are always same-repo (opened by
+    # release-prepare.yml), so a fork PR with a crafted `release/v*` branch name
+    # never starts a run.
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Mint a least-privilege token (omitting this grants the App's full
+          # installation set): finalize only pushes the tag and creates the
+          # release, both under contents. Checkout persists this token into
+          # .git/config, where later steps can read it — keep its scope minimal.
+          permission-contents: write
+
+      - name: Check out the merge commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Derive and verify version
+        id: v
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          version="${HEAD_REF#release/v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::could not derive X.Y.Z from head ref '$HEAD_REF'"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # Belt-and-suspenders: the merged content must match the branch name.
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$file_version" != "$version" ]; then
+            echo "::error::VERSION ($file_version) != branch version ($version)"; exit 1
+          fi
+          if [ ! -f ".changes/$version.md" ]; then
+            echo "::error::.changes/$version.md missing on the merge commit"; exit 1
+          fi
+
+          # The existence probes below must distinguish "absent" from
+          # "errored": a transient API failure has to fail the run, not
+          # silently reroute the state machine into re-creating things.
+
+          # State 1: tag AND release both already exist -> full no-op re-run.
+          set +e
+          release_err="$(gh release view "v$version" 2>&1 >/dev/null)"
+          release_rc=$?
+          set -e
+          if [ "$release_rc" -ne 0 ] && ! printf '%s' "$release_err" | grep -qi 'not found'; then
+            echo "::error::gh release view v$version failed: $release_err"; exit 1
+          fi
+          if [ "$release_rc" -eq 0 ]; then
+            echo "::notice::release v$version already exists — nothing to finalize."
+            echo "do_tag=false" >> "$GITHUB_OUTPUT"
+            echo "do_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # State 2: tag exists but the release is missing -> verify the tag
+          # points at this PR's merge commit, then create the release only.
+          # (git ls-remote --exit-code: 0 = ref found, 2 = no match, anything
+          # else = the lookup itself failed.)
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1
+          tag_rc=$?
+          set -e
+          if [ "$tag_rc" -ne 0 ] && [ "$tag_rc" -ne 2 ]; then
+            echo "::error::git ls-remote for tag v$version failed (exit $tag_rc)."; exit 1
+          fi
+          if [ "$tag_rc" -eq 0 ]; then
+            git fetch origin "refs/tags/v$version:refs/tags/v$version"
+            tag_commit="$(git rev-parse "v$version^{commit}")"
+            if [ "$tag_commit" != "$MERGE_SHA" ]; then
+              echo "::error::tag v$version already exists but points at $tag_commit, not this PR's merge commit ($MERGE_SHA). Refusing to overwrite a foreign tag."
+              exit 1
+            fi
+            echo "::notice::tag v$version already exists and matches the merge commit — skipping tag push, creating release."
+            echo "do_tag=false" >> "$GITHUB_OUTPUT"
+            echo "do_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # State 3: neither exists -> push the tag and create the release.
+          # Monotonic backstop for the prepare-side guard: refuse to tag a
+          # version at or below the newest existing v* tag, so merging two
+          # open release PRs out of order fails closed instead of publishing
+          # a downgrade. Only meaningful here — in states 1 and 2 this
+          # version's own tag already exists.
+          newest="$(git ls-remote --tags origin 'refs/tags/v*' | awk '{print $2}' \
+            | grep -E '^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|refs/tags/v||' \
+            | sort -V | tail -n1 || true)"
+          if [ -n "$newest" ]; then
+            highest="$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -n1)"
+            if [ "$highest" != "$version" ]; then
+              echo "::error::version $version is not greater than the newest existing tag v$newest; refusing to publish a downgrade. If this out-of-order merge is intentional, tag and release manually."
+              exit 1
+            fi
+          fi
+          echo "do_tag=true" >> "$GITHUB_OUTPUT"
+          echo "do_release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the release commit
+        if: steps.v.outputs.do_tag == 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Prepare release notes
+        if: steps.v.outputs.do_release == 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: cp ".changes/$VERSION.md" release-notes.md
+
+      - name: Create GitHub release
+        if: steps.v.outputs.do_release == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          body_path: release-notes.md
+          generate_release_notes: false
+          token: ${{ steps.app-token.outputs.token }}
