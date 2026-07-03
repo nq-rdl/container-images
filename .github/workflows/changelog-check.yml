@@ -11,13 +11,21 @@ permissions:
 jobs:
   check-changie-fragment:
     runs-on: ubuntu-latest
+    # Release PRs consume the unreleased fragments (they carry the batched
+    # .changes/<version>.md instead) and are labelled skip-changelog by
+    # release-prepare.yml. Dependabot PRs never carry a changie fragment; skip
+    # the gate for them (the bot has no way to run `changie new`). Human PRs
+    # still require one. Key the bot check off the PR *author*
+    # (pull_request.user.login), not github.actor — this workflow also runs on
+    # labeled/unlabeled, where github.actor is the human who clicked the label,
+    # which would otherwise re-run (and fail) the gate on a Dependabot PR.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Check for unreleased changie fragment
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
