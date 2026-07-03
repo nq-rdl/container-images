@@ -99,19 +99,26 @@ jobs:
           # silently reroute the state machine into re-creating things.
 
           # State 1: tag AND release both already exist -> full no-op re-run.
+          # Query the release via the REST API and branch on the HTTP status
+          # code (404 = absent) rather than parsing gh's human-readable stderr,
+          # which is not a stable interface across gh versions. On success gh
+          # exits 0; on any error it appends a stable "(HTTP <code>)" token we
+          # extract to tell a genuine 404 from a transient/transport failure.
           set +e
-          release_err="$(gh release view "v$version" 2>&1 >/dev/null)"
+          release_out="$(gh api "repos/{owner}/{repo}/releases/tags/v$version" 2>&1 >/dev/null)"
           release_rc=$?
           set -e
-          if [ "$release_rc" -ne 0 ] && ! printf '%s' "$release_err" | grep -qi 'not found'; then
-            echo "::error::gh release view v$version failed: $release_err"; exit 1
-          fi
           if [ "$release_rc" -eq 0 ]; then
             echo "::notice::release v$version already exists — nothing to finalize."
             echo "do_tag=false" >> "$GITHUB_OUTPUT"
             echo "do_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          release_status="$(printf '%s' "$release_out" | grep -oE 'HTTP [0-9]{3}' | head -n1 | grep -oE '[0-9]{3}')"
+          if [ "$release_status" != "404" ]; then
+            echo "::error::gh api releases/tags/v$version failed (status='${release_status:-none}'): $release_out"; exit 1
+          fi
+          # release_status == 404 -> release absent; fall through to states 2/3.
 
           # State 2: tag exists but the release is missing -> verify the tag
           # points at this PR's merge commit, then create the release only.
