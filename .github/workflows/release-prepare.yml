@@ -90,8 +90,16 @@ jobs:
           if [ -f ".changes/$VERSION.md" ]; then
             echo "::error::.changes/$VERSION.md already exists on main."; exit 1
           fi
-          # Must have something to ship.
-          if [ -z "$(ls .changes/unreleased/ 2>/dev/null | grep -v .gitkeep)" ]; then
+          # Must have something to ship: at least one unreleased fragment.
+          # Glob for *.yaml directly (ignores the .gitkeep placeholder) rather
+          # than `ls | grep`, which shellcheck (via actionlint) rejects.
+          has_unreleased=""
+          for f in .changes/unreleased/*.yaml; do
+            [ -e "$f" ] || continue
+            has_unreleased="true"
+            break
+          done
+          if [ -z "$has_unreleased" ]; then
             echo "::error::No unreleased changie fragments to batch."; exit 1
           fi
 
