@@ -109,7 +109,28 @@ jobs:
           release_rc=$?
           set -e
           if [ "$release_rc" -eq 0 ]; then
-            echo "::notice::release v$version already exists — nothing to finalize."
+            # A release for this version exists -> its tag exists too. Before
+            # treating this as an idempotent no-op, verify that tag points at
+            # THIS PR's merge commit (the same foreign-tag guard State 2 makes).
+            # Otherwise a same-version release left over from a foreign/older
+            # commit would be silently accepted while main now carries this PR's
+            # VERSION/.changes bump — publishing the wrong commit as v$version.
+            set +e
+            git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1
+            tag_rc=$?
+            set -e
+            if [ "$tag_rc" -ne 0 ] && [ "$tag_rc" -ne 2 ]; then
+              echo "::error::git ls-remote for tag v$version failed (exit $tag_rc)."; exit 1
+            fi
+            if [ "$tag_rc" -eq 0 ]; then
+              git fetch origin "refs/tags/v$version:refs/tags/v$version"
+              tag_commit="$(git rev-parse "v$version^{commit}")"
+              if [ "$tag_commit" != "$MERGE_SHA" ]; then
+                echo "::error::release v$version already exists but its tag points at $tag_commit, not this PR's merge commit ($MERGE_SHA). Refusing to no-op over a foreign release."
+                exit 1
+              fi
+            fi
+            echo "::notice::release v$version already exists and matches the merge commit — nothing to finalize."
             echo "do_tag=false" >> "$GITHUB_OUTPUT"
             echo "do_release=false" >> "$GITHUB_OUTPUT"
             exit 0

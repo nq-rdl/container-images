@@ -81,11 +81,29 @@ jobs:
           fi
 
           # Refuse to start if this version is already in flight or shipped.
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+          # git ls-remote --exit-code: 0 = ref found, 2 = no match, any other
+          # nonzero = the probe itself failed (network/auth/server). Treat only
+          # 2 as "absent" and fail closed on a real error, so a transient
+          # failure can't be mistaken for "the ref is free" and open a release
+          # PR for an already-tagged version (which would only surface after the
+          # version bump has merged).
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1
+          tag_rc=$?
+          set -e
+          if [ "$tag_rc" -eq 0 ]; then
             echo "::error::tag v$VERSION already exists."; exit 1
+          elif [ "$tag_rc" -ne 2 ]; then
+            echo "::error::git ls-remote for tag v$VERSION failed (exit $tag_rc); cannot verify release preconditions."; exit 1
           fi
-          if git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null 2>&1; then
+          set +e
+          git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null 2>&1
+          branch_rc=$?
+          set -e
+          if [ "$branch_rc" -eq 0 ]; then
             echo "::error::branch release/v$VERSION already exists."; exit 1
+          elif [ "$branch_rc" -ne 2 ]; then
+            echo "::error::git ls-remote for branch release/v$VERSION failed (exit $branch_rc); cannot verify release preconditions."; exit 1
           fi
           if [ -f ".changes/$VERSION.md" ]; then
             echo "::error::.changes/$VERSION.md already exists on main."; exit 1
