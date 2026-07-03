@@ -150,7 +150,20 @@ jobs:
           # open release PRs out of order fails closed instead of publishing
           # a downgrade. Only meaningful here — in states 1 and 2 this
           # version's own tag already exists.
-          newest="$(git ls-remote --tags origin 'refs/tags/v*' | awk '{print $2}' \
+          #
+          # Run ls-remote on its own line so a genuine remote/auth failure fails
+          # the release, instead of a trailing `|| true` on the whole pipeline
+          # swallowing it and leaving `newest` empty (which would silently skip
+          # the downgrade comparison). "No tags yet" is the empty-output case and
+          # is handled by the `|| true` on the pure-text filter below.
+          set +e
+          existing_tags="$(git ls-remote --tags origin 'refs/tags/v*')"
+          ls_rc=$?
+          set -e
+          if [ "$ls_rc" -ne 0 ]; then
+            echo "::error::git ls-remote for existing v* tags failed (exit $ls_rc); refusing to publish without the downgrade backstop."; exit 1
+          fi
+          newest="$(printf '%s\n' "$existing_tags" | awk '{print $2}' \
             | grep -E '^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|refs/tags/v||' \
             | sort -V | tail -n1 || true)"
           if [ -n "$newest" ]; then
