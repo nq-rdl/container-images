@@ -1,0 +1,19 @@
+name: datascience-notebook-cuda
+description: Jupyter datascience-notebook + CUDA 12.6 runtime + pytorch-gpu (public, sensitive-free base for downstream GPU notebook overlays)
+owners:
+  - nq-rdl/platform
+platforms:
+  - linux/amd64
+base:
+  registry: quay.io
+  repository: jupyter/datascience-notebook
+  version: "latest"
+runtime:
+  name: pytorch-gpu
+  version: "12.6"
+tags:
+  - "12.6"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-06-30"

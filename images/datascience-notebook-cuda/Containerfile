@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+
+# DL3026: quay.io is not in .hadolint.yaml trustedRegistries (vendor base, kept as-is pending UBI).
+# DL3007: the :latest tag is intentional (lets base-drift re-resolve the tag); the @sha256 digest is the real pin.
+# hadolint ignore=DL3026,DL3007
+FROM quay.io/jupyter/datascience-notebook:latest@sha256:a9350127a6ad3bea2603aabe3c973c5d0fd20ec81d31855b19a6a023c9fc97da
+
+LABEL org.opencontainers.image.title="datascience-notebook-cuda"
+LABEL org.opencontainers.image.description="Jupyter datascience-notebook + CUDA 12.6 runtime + pytorch-gpu (conda-forge). Sensitive-free public base for downstream GPU notebook overlays."
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# GPU compute layer, built cert-free and proxy-free on a public runner.
+#
+# No NVIDIA kernel driver is baked in: the host GPU operator injects the matching
+# driver at runtime via CDI, so the image ships only the CUDA runtime + cuDNN +
+# framework (everything above libcuda.so).
+#
+# There is no GPU during the build, so the __cuda virtual package is not
+# auto-detected and mamba would otherwise resolve CPU-only builds.
+# CONDA_OVERRIDE_CUDA declares the runtime CUDA floor so the solver selects the GPU
+# builds. Bump CONDA_OVERRIDE_CUDA / cuda-version together to move the runtime forward.
+USER ${NB_UID}
+RUN CONDA_OVERRIDE_CUDA="12.6" \
+    mamba install --yes -c conda-forge \
+      'cuda-version=12.6' \
+      pytorch-gpu \
+    && mamba clean --all -f -y
