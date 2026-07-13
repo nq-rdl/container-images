@@ -31,7 +31,7 @@ jobs:
       # usually conflicts with main on VERSION/CHANGELOG, in which case the
       # merge ref does not exist and a default checkout would fail).
       - name: Check out PR head
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
