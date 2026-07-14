@@ -21,7 +21,7 @@ jobs:
     # which would otherwise re-run (and fail) the gate on a Dependabot PR.
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

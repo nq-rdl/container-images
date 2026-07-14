@@ -11,7 +11,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install conftest
         run: |
@@ -32,7 +32,7 @@ jobs:
   workflow-tags:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Validate build workflow tag compliance
         run: bash tests/test-build-workflow-tags.sh
