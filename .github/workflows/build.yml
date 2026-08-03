@@ -220,7 +220,7 @@ jobs:
 
       - name: Upload Trivy results
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}.sarif
           category: trivy-${{ matrix.image }}${{ matrix.version != '' && format('-{0}', matrix.version) || '' }}
@@ -424,7 +424,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (foundation)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-docker-stacks-foundation-ubi9.sarif
           category: trivy-docker-stacks-foundation-ubi9
@@ -440,7 +440,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (base-notebook)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-base-notebook-ubi9.sarif
           category: trivy-base-notebook-ubi9
@@ -456,7 +456,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (minimal-notebook)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-minimal-notebook-ubi9.sarif
           category: trivy-minimal-notebook-ubi9
@@ -472,7 +472,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (scipy-notebook)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-scipy-notebook-ubi9.sarif
           category: trivy-scipy-notebook-ubi9
@@ -810,7 +810,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (r-base)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-r-base-ubi9.sarif
           category: trivy-r-base-ubi9
@@ -826,7 +826,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (jamovi-deps)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-jamovi-deps-ubi9.sarif
           category: trivy-jamovi-deps-ubi9
@@ -842,7 +842,7 @@ jobs:
           ignore-unfixed: true
       - name: Upload Trivy results (jamovi)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-jamovi-ubi9.sarif
           category: trivy-jamovi-ubi9
