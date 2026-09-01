@@ -43,12 +43,20 @@ pre-commit-install = "pre-commit install --hook-type pre-commit --hook-type pre-
 pre-commit-run = "pre-commit run --all-files"
 trivy-scan = "scripts/trivy-scan.sh"
 smoke-test = "scripts/smoke-test.sh"
+# Changie fragment length (per-fragment body cap, .changie.yaml body.maxLength). Lints only
+# the fragments added on this branch — mirrors CI's changelog-check.yml. The checker needs
+# pyyaml, which the pixi env already provides transitively via pre-commit; it is deliberately
+# not listed in [tool.pixi.dependencies] because `pixi add pyyaml` churns pixi.lock metadata.
+lint-changie = "bash scripts/check-changie-length.sh"
+# Hermetic (temp dirs only; no git, no network): the length linter's own unit tests.
+test-changie-length = "python3 -m unittest discover -s tests -p test_check_changie_length.py"
 
 # Offline aggregate (no network). The network-dependent reachability guard is deliberately
 # excluded; see policy-check-chained-bases-reachable above.
 # test-repin-chained-base is offline/hermetic (stub crane, temp sandbox) and belongs here.
+# test-changie-length is hermetic too (unittest over temp dirs) and belongs here.
 [tool.pixi.tasks.policy-check]
-depends-on = ["policy-check-containerfiles", "policy-check-image-meta", "policy-check-workflow-tags", "policy-check-base-pinning", "policy-check-chained-bases", "test-repin-chained-base", "test-proxy-ca-probe-report"]
+depends-on = ["policy-check-containerfiles", "policy-check-image-meta", "policy-check-workflow-tags", "policy-check-base-pinning", "policy-check-chained-bases", "test-repin-chained-base", "test-proxy-ca-probe-report", "test-changie-length"]
 
 [tool.pixi.tasks.lint-all]
-depends-on = ["lint-containerfiles", "lint-shell", "lint-actions", "policy-check"]
+depends-on = ["lint-containerfiles", "lint-shell", "lint-actions", "lint-changie", "policy-check"]

@@ -45,3 +45,14 @@ jobs:
 
       - name: Run gitleaks
         run: gitleaks detect --source . --config .gitleaks.toml --verbose
+
+  changie-length-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pyyaml
+        run: python3 -m pip install --user pyyaml
+
+      - name: Run changie length linter tests
+        run: python3 -m unittest discover -s tests -p test_check_changie_length.py

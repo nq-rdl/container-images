@@ -21,9 +21,12 @@ jobs:
     # which would otherwise re-run (and fail) the gate on a Dependabot PR.
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Install pyyaml (changie length linter)
+        run: python3 -m pip install --user pyyaml
 
       - name: Check for unreleased changie fragment
         env:
@@ -41,3 +44,11 @@ jobs:
 
           echo "Found changie fragment(s):"
           echo "$FRAGMENTS"
+
+          # Enforce the per-fragment body length cap on the fragments *added* on
+          # this branch only (diff-filter=A) — released versions and pre-existing
+          # unreleased fragments are never retroactively flagged. Mirrors the
+          # local pre-commit "changie fragment length" hook
+          # (scripts/check-changie-length.sh). Override with
+          # CHANGIE_MAX_BODY_LENGTH; keep it in sync with .changie.yaml body.maxLength.
+          echo "$FRAGMENTS" | xargs python3 scripts/check_changie_length.py

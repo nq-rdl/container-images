@@ -1,0 +1,3 @@
+kind: Added
+body: 'Changie fragment length lint: 200-char body cap in .changie.yaml, enforced by changelog-check.yml, the `changie fragment length` pre-commit hook, and `pixi run lint-changie`'
+time: 2026-09-01T09:01:00+10:00

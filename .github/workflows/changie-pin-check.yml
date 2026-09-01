@@ -1,0 +1,148 @@
+name: Changie pin check
+
+# Weekly staleness check for the Changie *binary* pin in release-prepare.yml
+# (the `version:` input on its changie-action step). Dependabot bumps the
+# action's commit SHA but never `with:` inputs, so without this the pin could
+# only drift silently. This is a notification path, not an update
+# path: the check never edits the repository. When the pin is behind
+# miniscruff/changie's latest release (GitHub's "latest" release metadata, not
+# an independently computed greatest tag) it opens a tracking issue; the bump
+# itself stays a normal, reviewed PR — after bumping, eyeball the next batched
+# .changes/<version>.md, which is the reason the pin exists.
+#
+# Issue lifecycle. Tracking issues carry the `changie-pin` label and are
+# enumerated through the REST issues API (not search, so a just-created or
+# retitled issue is visible immediately — no index lag):
+#   - at most ONE tracking issue is open at a time: an older open one is
+#     retitled to the current (pinned, latest) pair instead of duplicated, and
+#     any extra open ones are closed;
+#   - an issue for the current pair that a human already CLOSED suppresses
+#     re-notification for that exact pair (closing without bumping is a valid
+#     decision); any older open tracker is then closed as superseded;
+#   - once the pin is current again, every open tracking issue is closed.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# Scheduled + manual runs must not interleave their read-then-write of the
+# tracking-issue state.
+concurrency:
+  group: changie-pin-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare the pinned Changie with the latest upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: .github/workflows/release-prepare.yml
+          UPSTREAM: miniscruff/changie
+          LABEL: changie-pin
+          TITLE_PREFIX: "release-prepare: Changie pin"
+        run: |
+          set -euo pipefail
+          SEMVER_TAG_RE='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+
+          # The pin is the `version:` input of the (single, uncommented)
+          # changie-action step: match `uses:` only as a real YAML key, read
+          # only until the next step starts, and insist on exactly one match so
+          # a reshuffled, duplicated or removed step fails loudly instead of
+          # being silently misread.
+          rc=0; pinned="$(awk '
+            /^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*miniscruff\/changie-action@/ { steps++; in_step = 1; next }
+            in_step && /^[[:space:]]*-[[:space:]]/ { in_step = 0 }
+            in_step && /^[[:space:]]*version:[[:space:]]*/ { print $2; found++; in_step = 0 }
+            END { if (steps != 1 || found != 1) exit 3 }' "$WORKFLOW")" || rc=$?
+          pinned="${pinned//\"/}"; pinned="${pinned//\'/}"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$pinned" | grep -Eq "$SEMVER_TAG_RE"; then
+            echo "::error::could not read exactly one pinned Changie version (vX.Y.Z) from $WORKFLOW (got '${pinned:-<empty>}'). Is the changie-action step still there, and still pinned?"
+            exit 1
+          fi
+
+          # `gh release view` without a tag returns the release GitHub marks as
+          # latest (excludes drafts and pre-releases).
+          latest="$(gh release view --repo "$UPSTREAM" --json tagName --jq .tagName)"
+          if ! printf '%s' "$latest" | grep -Eq "$SEMVER_TAG_RE"; then
+            echo "::error::unexpected latest release tag from $UPSTREAM: '${latest:-<empty>}'"
+            exit 1
+          fi
+          echo "pinned=$pinned latest=$latest"
+
+          # Tracking issues are keyed by the label; make sure it exists (no
+          # --force, so a maintainer's colour/description edit is never reset).
+          if ! gh api "repos/{owner}/{repo}/labels/$LABEL" --silent >/dev/null 2>&1; then
+            gh label create "$LABEL" --color 0e8a16 \
+              --description "Opened by the Changie pin check workflow when release-prepare.yml's Changie pin is behind upstream"
+          fi
+
+          # Exact read of every tracking issue, open and closed. PRs share the
+          # endpoint and are filtered out. --slurp wraps the pages in one array.
+          issues="$(gh api --paginate --slurp -X GET "repos/{owner}/{repo}/issues" \
+              -f state=all -f labels="$LABEL" -f per_page=100 \
+            | jq -c '[.[][] | select(.pull_request == null) | {number, title, state}]')"
+          mapfile -t open_nums < <(printf '%s' "$issues" | jq -r --arg p "$TITLE_PREFIX " \
+            '[.[] | select(.state == "open" and (.title | startswith($p))) | .number] | sort | reverse | .[]')
+
+          # Close every open tracker except $1 (pass "" to close them all).
+          close_open_except() {
+            local keep="$1" comment="$2" n
+            for n in "${open_nums[@]}"; do
+              [ "$n" = "$keep" ] && continue
+              gh issue close "$n" --comment "$comment" >/dev/null
+              echo "::notice::closed tracking issue #$n."
+            done
+          }
+
+          # Current (or ahead, e.g. a deliberate pre-release pin): nothing to
+          # track — close any leftover trackers and stop.
+          newest="$(printf '%s\n%s\n' "${pinned#v}" "${latest#v}" | sort -V | tail -n1)"
+          if [ "$newest" = "${pinned#v}" ]; then
+            echo "::notice::Changie pin $pinned is current (latest upstream release: $latest)."
+            close_open_except "" "The Changie pin in \`$WORKFLOW\` is now \`$pinned\` (latest upstream: \`$latest\`) — closed by the Changie pin check."
+            exit 0
+          fi
+
+          title="$TITLE_PREFIX $pinned is behind upstream $latest"
+          body="$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
+            "The Changie binary pinned in \`$WORKFLOW\` (\`version:\` on the \`changie-action\` step) is **$pinned**, but the latest upstream release is **$latest** — https://github.com/$UPSTREAM/releases/tag/$latest" \
+            "Dependabot bumps the action SHA but never \`with:\` inputs, so the weekly **Changie pin check** workflow reports this drift instead. It only notifies — the bump is a human decision." \
+            "**To bump:** read the upstream release notes (a major bump may change how the changelog is rendered), open a normal PR changing \`version: $pinned\` → \`version: $latest\`, then eyeball the next batched \`.changes/<version>.md\` — that review is the reason the pin exists (see docs/releasing.md)." \
+            "Closing this issue without bumping is fine: the check stays quiet for this exact version pair and only opens a new issue when a newer upstream release appears.")"
+
+          exact_open="$(printf '%s' "$issues" | jq -r --arg t "$title" \
+            '[.[] | select(.title == $t and .state == "open")] | .[0].number // empty')"
+          exact_closed="$(printf '%s' "$issues" | jq -r --arg t "$title" \
+            '[.[] | select(.title == $t and .state == "closed")] | .[0].number // empty')"
+
+          if [ -n "$exact_open" ]; then
+            echo "::notice::drift $pinned -> $latest is already tracked in #$exact_open."
+            close_open_except "$exact_open" "Superseded by #$exact_open, which tracks the current drift ($pinned -> $latest) — closed by the Changie pin check."
+            exit 0
+          fi
+          if [ -n "$exact_closed" ]; then
+            echo "::notice::drift $pinned -> $latest was tracked in #$exact_closed and closed by a human; staying quiet."
+            close_open_except "" "Drift for the current version pair ($pinned -> $latest) was tracked in #$exact_closed and closed — this older tracker is superseded. Closed by the Changie pin check."
+            exit 0
+          fi
+
+          if [ "${#open_nums[@]}" -gt 0 ]; then
+            keep="${open_nums[0]}"
+            gh issue edit "$keep" --title "$title" --body "$body" >/dev/null
+            echo "::warning::rolled tracking issue #$keep forward: $title"
+            close_open_except "$keep" "Duplicate tracker — #$keep now tracks the current drift ($pinned -> $latest). Closed by the Changie pin check."
+          else
+            url="$(gh issue create --title "$title" --body "$body" --label "$LABEL")"
+            echo "::warning::opened tracking issue: $title ($url)"
+          fi

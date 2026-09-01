@@ -54,6 +54,18 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+      # Per-fragment body cap (.changie.yaml body.maxLength). Lints only the
+      # fragments added on this branch / staged as added — mirrors CI's
+      # changelog-check.yml, so pre-existing over-long fragments are never
+      # retroactively flagged.
+      - id: changie-length
+        name: changie fragment length
+        entry: pixi run bash scripts/check-changie-length.sh
+        language: system
+        files: ^\.changes/unreleased/.*\.yaml$
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: changie-fragment
         name: changie fragment required
         entry: scripts/check-changie-fragment.sh enforce

@@ -6,6 +6,13 @@ versionExt: md
 versionFormat: '## {{.Version}} - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
 changeFormat: '* {{.Body}}'
+# Hard per-fragment body cap. Enforced by `changie new` (interactive prompt and
+# --body). Fragments written directly (bypassing the prompt) are caught by the
+# pre-commit hook 'changie fragment length' (scripts/check-changie-length.sh ->
+# scripts/check_changie_length.py) and on CI by changelog-check.yml.
+# A change too long for one fragment is split into several: `changie new` again.
+body:
+    maxLength: 200
 kinds:
     - label: Added
       auto: minor
