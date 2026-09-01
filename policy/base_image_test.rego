@@ -37,19 +37,57 @@ test_denies_dockerhub_base if {
 	count(msgs) == 1
 }
 
-# A waived vendor base (non_ubi_base_exceptions) -> ALLOWED.
-test_allows_waived_vendor_base if {
+# A waived vendor base (non_ubi_base_exceptions) -> ALLOWED, in every pin form.
+# The digest-only case is the important one: it is the STRICTER pin, so a waiver that
+# only understood ":tag" would reject it while accepting the looser tagged form.
+test_allows_waived_vendor_base_tag_and_digest if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest@sha256:abc"]},
 	]
 	count(msgs) == 0
 }
 
-# A look-alike repository that merely shares a waived repo's prefix -> DENIED.
-# Guards the trailing ":" in excepted_base: without it this would be waived too.
-test_denies_lookalike_of_waived_base if {
+test_allows_waived_vendor_base_digest_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook@sha256:abc"]},
+	]
+	count(msgs) == 0
+}
+
+test_allows_waived_vendor_base_tag_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest"]},
+	]
+	count(msgs) == 0
+}
+
+test_allows_waived_vendor_base_bare if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook"]},
+	]
+	count(msgs) == 0
+}
+
+# A look-alike repository that merely shares a waived repo's prefix -> DENIED, in every
+# pin form. Guards the delimiter anchoring in excepted_base: a bare startswith on the
+# repository name alone would waive all of these.
+test_denies_lookalike_of_waived_base_tagged if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork:latest@sha256:abc"]},
+	]
+	count(msgs) == 1
+}
+
+test_denies_lookalike_of_waived_base_digest_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork@sha256:abc"]},
+	]
+	count(msgs) == 1
+}
+
+test_denies_lookalike_of_waived_base_bare if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork"]},
 	]
 	count(msgs) == 1
 }
