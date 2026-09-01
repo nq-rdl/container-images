@@ -1,3 +1,0 @@
-kind: Added
-body: PR-driven release flow — the "Release — Prepare PR" workflow (workflow_dispatch) batches the changelog and stamps VERSION into a reviewable `release/v*` PR, a PR guard enforces monotonic versions, and merging it tags `v<version>` and publishes the GitHub Release
-time: 2026-07-03T10:00:00+10:00
