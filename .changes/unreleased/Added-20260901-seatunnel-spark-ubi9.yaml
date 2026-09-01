@@ -1,0 +1,3 @@
+kind: Added
+body: 'seatunnel-spark-ubi9: Apache SeaTunnel 2.3.13 (Zeta + Spark 3.3.1 engines) on UBI9-minimal 9.8 with Azul Zulu 11.0.32.1 JRE and the SHA-512-pinned StarRocks/JDBC/Iceberg connector set from connectors.txt — a prebuilt, digest-pinnable drop-in for the dataops-built localdev/seatunnel-spark:2.3.13 (issue #69 / dataops#139 Phase B); both engines verified on the new base, migration review in docs/seatunnel-spark-ubi9-migration-review.md'
+time: 2026-09-01T01:45:00.000000000+10:00

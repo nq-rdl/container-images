@@ -1,0 +1,1 @@
+/opt/seatunnel/bin/seatunnel.sh --config /opt/seatunnel/config/v2.batch.config.template -m local

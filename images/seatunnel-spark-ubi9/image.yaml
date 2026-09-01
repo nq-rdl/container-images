@@ -1,0 +1,21 @@
+name: seatunnel-spark-ubi9
+description: Apache SeaTunnel 2.3.13 (Zeta + Spark 3.3.1 engines) with pinned StarRocks/JDBC/Iceberg connectors on UBI9 minimal
+owners:
+  - nq-rdl/platform
+  - nq-rdl/data-engineering
+platforms:
+  - linux/amd64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.8"
+runtime:
+  name: seatunnel
+  version: "2.3.13"
+tags:
+  - "2.3"
+  - "2.3.13"
+  - "latest"
+support:
+  status: stable
+  eol: "2027-12-31"
