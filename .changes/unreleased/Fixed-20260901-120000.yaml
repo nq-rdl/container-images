@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Unblock the conftest UBI-base policy: waive the datascience-notebook-cuda vendor base via a documented, tested `non_ubi_base_exceptions` allowlist (migration tracked in #84)'
+time: 2026-09-01T12:00:00.000000+10:00
