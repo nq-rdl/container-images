@@ -96,7 +96,8 @@ It only notifies; it never edits the repository, and the bump stays a reviewed P
   `release-prepare: Changie pin vA is behind upstream vB`), or retitles an older open tracker to
   the current pair rather than duplicating it; any extra open trackers are closed;
 - pin current (or ahead, e.g. a deliberate pin to a `vX.Y.Z` tag GitHub marks as a pre-release)
-  → closes every open tracking issue;
+  → closes every open tracking issue; if that exact drift later recurs (for example, because the
+  pin is reverted), the workflow reopens the tracker it closed;
 - a human already **closed** the issue for the current (pinned, latest) pair → stays quiet for
   that exact pair (closing without bumping is a valid decision; any older open tracker is closed
   as superseded) and only speaks up again when a newer upstream release appears.

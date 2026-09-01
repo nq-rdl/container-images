@@ -18,7 +18,8 @@ name: Changie pin check
 #     any extra open ones are closed;
 #   - an issue for the current pair that a human already CLOSED suppresses
 #     re-notification for that exact pair (closing without bumping is a valid
-#     decision); any older open tracker is then closed as superseded;
+#     decision), while one this workflow closed is reopened if the drift recurs;
+#     any older open tracker is then closed as superseded;
 #   - once the pin is current again, every open tracking issue is closed.
 
 on:
@@ -91,7 +92,7 @@ jobs:
           # endpoint and are filtered out. --slurp wraps the pages in one array.
           issues="$(gh api --paginate --slurp -X GET "repos/{owner}/{repo}/issues" \
               -f state=all -f labels="$LABEL" -f per_page=100 \
-            | jq -c '[.[][] | select(.pull_request == null) | {number, title, state}]')"
+            | jq -c '[.[][] | select(.pull_request == null) | {number, title, state, closed_by: (.closed_by.login // "")}]')"
           mapfile -t open_nums < <(printf '%s' "$issues" | jq -r --arg p "$TITLE_PREFIX " \
             '[.[] | select(.state == "open" and (.title | startswith($p))) | .number] | sort | reverse | .[]')
 
@@ -122,18 +123,27 @@ jobs:
             "Closing this issue without bumping is fine: the check stays quiet for this exact version pair and only opens a new issue when a newer upstream release appears.")"
 
           exact_open="$(printf '%s' "$issues" | jq -r --arg t "$title" \
-            '[.[] | select(.title == $t and .state == "open")] | .[0].number // empty')"
-          exact_closed="$(printf '%s' "$issues" | jq -r --arg t "$title" \
-            '[.[] | select(.title == $t and .state == "closed")] | .[0].number // empty')"
+            '[.[] | select(.title == $t and .state == "open")] | max_by(.number).number // empty')"
+          exact_human_closed="$(printf '%s' "$issues" | jq -r --arg t "$title" \
+            '[.[] | select(.title == $t and .state == "closed" and .closed_by != "github-actions[bot]")] | max_by(.number).number // empty')"
+          exact_workflow_closed="$(printf '%s' "$issues" | jq -r --arg t "$title" \
+            '[.[] | select(.title == $t and .state == "closed" and .closed_by == "github-actions[bot]")] | max_by(.number).number // empty')"
 
           if [ -n "$exact_open" ]; then
             echo "::notice::drift $pinned -> $latest is already tracked in #$exact_open."
             close_open_except "$exact_open" "Superseded by #$exact_open, which tracks the current drift ($pinned -> $latest) — closed by the Changie pin check."
             exit 0
           fi
-          if [ -n "$exact_closed" ]; then
-            echo "::notice::drift $pinned -> $latest was tracked in #$exact_closed and closed by a human; staying quiet."
-            close_open_except "" "Drift for the current version pair ($pinned -> $latest) was tracked in #$exact_closed and closed — this older tracker is superseded. Closed by the Changie pin check."
+          if [ -n "$exact_human_closed" ]; then
+            echo "::notice::drift $pinned -> $latest was tracked in #$exact_human_closed and closed by a human; staying quiet."
+            close_open_except "" "Drift for the current version pair ($pinned -> $latest) was tracked in #$exact_human_closed and closed — this older tracker is superseded. Closed by the Changie pin check."
+            exit 0
+          fi
+          if [ -n "$exact_workflow_closed" ]; then
+            gh issue reopen "$exact_workflow_closed" \
+              --comment "The drift $pinned -> $latest has recurred after it was previously resolved — reopened by the Changie pin check." >/dev/null
+            echo "::warning::reopened tracking issue #$exact_workflow_closed for recurring drift $pinned -> $latest."
+            close_open_except "$exact_workflow_closed" "Superseded by reopened #$exact_workflow_closed, which tracks the recurring drift ($pinned -> $latest) — closed by the Changie pin check."
             exit 0
           fi
 
