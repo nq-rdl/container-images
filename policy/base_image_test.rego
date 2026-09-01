@@ -36,3 +36,20 @@ test_denies_dockerhub_base if {
 	]
 	count(msgs) == 1
 }
+
+# A waived vendor base (non_ubi_base_exceptions) -> ALLOWED.
+test_allows_waived_vendor_base if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest@sha256:abc"]},
+	]
+	count(msgs) == 0
+}
+
+# A look-alike repository that merely shares a waived repo's prefix -> DENIED.
+# Guards the trailing ":" in excepted_base: without it this would be waived too.
+test_denies_lookalike_of_waived_base if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork:latest@sha256:abc"]},
+	]
+	count(msgs) == 1
+}
