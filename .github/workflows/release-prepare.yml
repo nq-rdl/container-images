@@ -3,29 +3,29 @@ name: Release — Prepare PR
 # Manually-triggered first half of the release. Produces a reviewable
 # `release/v<version>` PR that batches the changelog and stamps VERSION.
 # Nothing is published here — merging the PR is what cuts the release (see
-# release-finalize.yml). This replaces the old "push a v* tag" entry point
-# (release.yml): the version you used to type as a git tag you now type once
+# release-finalize.yml). This replaces the old "push a v* tag from a laptop"
+# entry point: the version you used to type as a git tag you now type once
 # into the `version` input below.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, no leading v (e.g. 0.1.0). Batched explicitly — no auto-bump."
+        description: "Version to release, no leading v, no zero-padded components (e.g. 0.12.0). Batched explicitly — no auto-bump."
         required: true
         type: string
 
 # All writes go through the GitHub App token so the resulting PR's events are
-# attributed to the app (not GITHUB_TOKEN) and therefore DO trigger the
-# validation and changelog-check workflows on the release PR.
+# attributed to the app (not GITHUB_TOKEN) and therefore DO trigger this repo's
+# PR checks (lint.yml, changelog-check.yml, …) on the release PR.
 permissions:
   contents: read
 
 # One prepare run per version: simultaneous same-version dispatches serialize
 # (the second then fails cleanly on the branch-exists precondition) instead of
-# racing the branch push. Scoped per version because GitHub keeps only one
-# PENDING run per concurrency group — a global group would let a third
-# dispatch silently cancel a queued run for an unrelated version.
+# racing the branch push. Scoped per version because, by default, GitHub keeps
+# only one PENDING run per concurrency group — a global group would let a
+# third dispatch silently cancel a queued run for an unrelated version.
 concurrency:
   group: release-prepare-${{ inputs.version }}
   cancel-in-progress: false
@@ -36,7 +36,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -50,7 +50,7 @@ jobs:
           permission-issues: write
 
       - name: Check out main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -61,14 +61,19 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::version must be X.Y.Z with no leading v. Got: '$VERSION'"
+          # Each component is a plain integer: no leading zeros, so 0.1.00
+          # cannot be passed off as newer than 0.1.0 (GNU sort -V orders it
+          # after 0.1.0, which would let it through the monotonic check
+          # below and publish a non-SemVer tag for the same numeric version).
+          SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if ! printf '%s' "$VERSION" | grep -Eq "$SEMVER_RE"; then
+            echo "::error::version must be X.Y.Z with no leading v and no zero-padded components. Got: '$VERSION'"
             exit 1
           fi
 
-          # Monotonic version guard: a typo like 0.0.1 would otherwise pass and
-          # downgrade the project. Compare semver-aware (GNU sort -V, so 0.9.0 <
-          # 0.10.0) against the current VERSION file.
+          # Monotonic version guard: a typo like 0.1.5 would
+          # otherwise pass and downgrade the project. Compare semver-aware
+          # (GNU sort -V, so 0.9.0 < 0.10.0) against the current VERSION file.
           CURRENT_VERSION="$(tr -d '[:space:]' < VERSION)"
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
             echo "::error::version $VERSION equals current VERSION ($CURRENT_VERSION); nothing to release."
@@ -81,50 +86,42 @@ jobs:
           fi
 
           # Refuse to start if this version is already in flight or shipped.
-          # git ls-remote --exit-code: 0 = ref found, 2 = no match, any other
-          # nonzero = the probe itself failed (network/auth/server). Treat only
-          # 2 as "absent" and fail closed on a real error, so a transient
-          # failure can't be mistaken for "the ref is free" and open a release
-          # PR for an already-tagged version (which would only surface after the
-          # version bump has merged).
-          set +e
-          git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1
-          tag_rc=$?
-          set -e
-          if [ "$tag_rc" -eq 0 ]; then
-            echo "::error::tag v$VERSION already exists."; exit 1
-          elif [ "$tag_rc" -ne 2 ]; then
-            echo "::error::git ls-remote for tag v$VERSION failed (exit $tag_rc); cannot verify release preconditions."; exit 1
-          fi
-          set +e
-          git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null 2>&1
-          branch_rc=$?
-          set -e
-          if [ "$branch_rc" -eq 0 ]; then
-            echo "::error::branch release/v$VERSION already exists."; exit 1
-          elif [ "$branch_rc" -ne 2 ]; then
-            echo "::error::git ls-remote for branch release/v$VERSION failed (exit $branch_rc); cannot verify release preconditions."; exit 1
-          fi
+          # Each probe distinguishes "absent" from "errored" (git ls-remote
+          # --exit-code: 0 = ref found, 2 = no match, anything else = the
+          # lookup itself failed) so a transient failure stops the run instead
+          # of being read as "absent" and waving the version through — the
+          # same fail-closed pattern release-finalize.yml uses.
+          rc=0; git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "::error::tag v$VERSION already exists."; exit 1 ;;
+            2) ;;
+            *) echo "::error::git ls-remote for tag v$VERSION failed (exit $rc)."; exit 1 ;;
+          esac
+          rc=0; git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null 2>&1 || rc=$?
+          case "$rc" in
+            0) echo "::error::branch release/v$VERSION already exists."; exit 1 ;;
+            2) ;;
+            *) echo "::error::git ls-remote for branch release/v$VERSION failed (exit $rc)."; exit 1 ;;
+          esac
           if [ -f ".changes/$VERSION.md" ]; then
             echo "::error::.changes/$VERSION.md already exists on main."; exit 1
           fi
-          # Must have something to ship: at least one unreleased fragment.
-          # Glob for *.yaml directly (ignores the .gitkeep placeholder) rather
-          # than `ls | grep`, which shellcheck (via actionlint) rejects.
-          has_unreleased=""
-          for f in .changes/unreleased/*.yaml; do
-            [ -e "$f" ] || continue
-            has_unreleased="true"
-            break
-          done
-          if [ -z "$has_unreleased" ]; then
+          # Must have something to ship (changie fragments are *.yaml; .gitkeep
+          # does not count).
+          shopt -s nullglob
+          fragments=(.changes/unreleased/*.yaml)
+          if [ "${#fragments[@]}" -eq 0 ]; then
             echo "::error::No unreleased changie fragments to batch."; exit 1
           fi
 
+      # Pinned (not `latest`) so an unchanged workflow always runs the same
+      # Changie: a new upstream release cannot break a release run or change
+      # the generated changelog without a reviewed bump here. Bump on a normal
+      # PR and eyeball the next batched .changes/<version>.md.
       - name: Install changie
-        uses: miniscruff/changie-action@v3
+        uses: miniscruff/changie-action@3223cb29b92a0972dedc864ace3da01e04780ae4 # v3.0.1
         with:
-          version: latest
+          version: v1.26.0
 
       - name: Batch changelog and stamp version
         env:
@@ -157,12 +154,43 @@ jobs:
           git switch -c "$BRANCH"
           git add -A
           git commit -m "chore: release v$VERSION — batch changelog, bump version"
+          # Captured before the push so that, once the branch is on the remote,
+          # the only statements ahead of the trap are the function definition
+          # and the trap line itself — nothing that can fail.
+          PUSHED_SHA="$(git rev-parse HEAD)"
           git push -u origin "$BRANCH"
 
-          # `gh pr create --label` hard-fails on a missing label, so create
-          # skip-changelog only if absent — no --force, so a maintainer's
-          # customization of an existing label's color/description is never
-          # silently reset. (The App token needs issues:write for this.)
+          # From here the branch exists on the remote. If anything below fails
+          # (label lookup/creation, gh pr create — e.g. a transient API error)
+          # delete it again so the run stays retryable: the precondition step
+          # refuses an existing release branch, so an orphaned one would block
+          # every re-dispatch until someone deleted it by hand. Deleting the
+          # branch also auto-closes a PR that gh managed to create before
+          # failing (it applies labels in a follow-up call after creation), so
+          # a re-dispatch starts clean either way.
+          #
+          # The delete is lease-protected: it only succeeds while the remote
+          # branch still points at the commit this run pushed. A branch that
+          # someone has since moved (or already deleted) is left alone and
+          # reported, never destroyed.
+          cleanup_branch_on_failure() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::opening the release PR failed (exit $rc); deleting $BRANCH so Prepare can be re-dispatched."
+              git push --force-with-lease="refs/heads/$BRANCH:$PUSHED_SHA" origin ":refs/heads/$BRANCH" \
+                || echo "::error::$BRANCH was not deleted: it no longer points at this run's commit ($PUSHED_SHA)," \
+                  "or the delete itself failed. Inspect it, then delete it by hand before re-dispatching."
+            fi
+            exit "$rc"
+          }
+          trap cleanup_branch_on_failure EXIT
+
+          # The skip-changelog label does not exist in the repo today, and
+          # `gh pr create --label` hard-fails on a missing label. Create it
+          # only if absent — no --force, so a maintainer's customization of an
+          # existing label's color/description is never silently reset. (The
+          # App token needs issues:write for label creation.)
           if ! gh api "repos/{owner}/{repo}/labels/skip-changelog" --silent >/dev/null 2>&1; then
             gh label create skip-changelog \
               --color ededed \

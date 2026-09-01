@@ -11,3 +11,4 @@
 - [ ] Image builds locally (`podman build images/<name>/`)
 - [ ] README updated (if adding/changing an image)
 - [ ] Dependabot entry added (if new image)
+- [ ] Changie fragment added (`changie new`; one idea per fragment, ≤200 chars) — or the `skip-changelog` label applied

@@ -43,7 +43,11 @@ so the apply command below (which rewrites the *entire* required set) does not d
 | `hadolint`               | `hadolint.yml`          | `paths: ['images/**/Containerfile']` — same path-filter trap.                                                    |
 | OPA policy jobs          | `policy.yml`            | `paths: ['images/**', 'policy/**', …]` — same trap.                                                              |
 | Validate Base Pins       | `validate-base-pins.yml`| `paths: ['images/**', …]` — same trap.                                                                           |
-| `check-changie-fragment` | `changelog-check.yml`   | Job-level `if:` skips on `skip-changelog` / dependabot. It reports `skipped` = pass, so requiring it is harmless but pointless. |
+| `check-changie-fragment` | `changelog-check.yml`   | Job-level `if:` skips on `skip-changelog` / dependabot. It reports `skipped` = pass, so requiring it is harmless but pointless. Besides requiring a fragment, it lints each fragment the PR *adds* against the 200-char body cap (`scripts/check_changie_length.py`). |
+| `changie-length-tests`   | `lint.yml`              | Always-run (no `paths:` filter, no `if:`), so it *could* safely be required — but it is the unit-test suite for the changie length linter itself, not a gate on PR content. Left optional by default; add it to the required table **and** the `PATCH` below if you want that self-test to gate `main`. |
+
+`changie-pin-check.yml` is `schedule` / `workflow_dispatch` only — it never reports a check on PRs,
+so it can neither be required nor appear in either table.
 
 ## Applying the setting
 
