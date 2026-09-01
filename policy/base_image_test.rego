@@ -91,3 +91,19 @@ test_denies_lookalike_of_waived_base_bare if {
 	]
 	count(msgs) == 1
 }
+
+# Snapshot of the waiver set.
+#
+# The allowlist is security-relevant configuration, not code: an over-broad entry
+# silently disables the UBI mandate for an entire repository while every other test here
+# still passes, because each one only asserts about a repository it names by hand.
+# Verified: adding "docker.io/library/ubuntu" to non_ubi_base_exceptions leaves all other
+# tests green AND `conftest test` green across all 24 Containerfiles — nothing else
+# catches it.
+#
+# Pinning the exact contents makes growing the waiver a deliberate two-file diff that a
+# reviewer cannot miss. When an entry is legitimately added or removed, update this set
+# in the same commit — and the comment block in base_image.rego naming its tracking issue.
+test_non_ubi_base_exceptions_snapshot if {
+	non_ubi_base_exceptions == {"quay.io/jupyter/datascience-notebook"}
+}
