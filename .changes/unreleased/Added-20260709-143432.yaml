@@ -1,3 +1,0 @@
-kind: Added
-body: 'datascience-notebook-cuda: public sensitive-free CUDA 12.6 + pytorch-gpu base for downstream GPU notebook overlays (Ubuntu-based on the digest-pinned upstream jupyter base; UBI rebuild is future state)'
-time: 2026-07-09T14:34:32.450906026+10:00

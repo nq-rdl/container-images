@@ -1,3 +1,0 @@
-kind: Added
-body: 'Makefile with install-deps target for pixi, container runtime, gh CLI, kubectl, and k3d'
-time: 2026-05-26T20:01:00.000000+00:00

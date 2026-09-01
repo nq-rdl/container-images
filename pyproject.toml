@@ -1,6 +1,6 @@
 [project]
 name = "container-images"
-version = "0.0.1"
+version = "0.1.0"
 description = "RDL container image catalog — build tooling"
 requires-python = ">=3.10"
 dependencies = [

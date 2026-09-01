@@ -1,3 +1,0 @@
-kind: Fixed
-body: 'Hardened release workflows: canonical SemVer (no zero-padding), fail-closed remote probes, a global finalize FIFO queue, self-cleaning Prepare, SHA-pinned actions, Changie pinned at v1.26.0'
-time: 2026-09-01T09:00:00+10:00
