@@ -16,7 +16,7 @@ FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:b8c53f907b7ea8934d6bb23b319c
 ARG R_VERSION=4.5.0
 ARG OS_IDENTIFIER=rhel-9
 # amd64-only: image.yaml declares linux/amd64 only; arm64 would need a separate R RPM checksum.
-ARG R_SHA256=737d526ea0c72011942a963b6c5b03b01cc835bea6f302ef16b73633f84817d8
+ARG R_SHA256=22a92a21f9b7ec12bc715ceed3d7f63543f7665d9bf63d0a80c14dd13ccf97a8
 ARG PANDOC_VERSION=2.19.2
 # amd64-only: the TARGETARCH case below has an arm64 Pandoc branch but the checksum here is
 # amd64-only — multi-arch builds require per-arch SHA256 variables.
