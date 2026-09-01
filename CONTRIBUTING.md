@@ -132,7 +132,11 @@ Tags are digest-pinned in git, so rollback is a git revert:
 ## Containerfile conventions
 
 - Use `Containerfile`, not `Dockerfile`
-- Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`
+- Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`,
+  or be a UBI-rooted `ghcr.io/nq-rdl/*` image from this repo (see *Chained images*).
+  A vendor base with no UBI equivalent needs a reviewed exception in
+  `non_ubi_base_exceptions` (`policy/base_image.rego`), naming the image it covers and a
+  tracking issue for its migration. Adding one is a policy change, not a formality.
 - Pin the base image by digest (`registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:…`);
   the `base-drift.yml` workflow opens a PR to bump the digest when the upstream tag moves.
   Pin runtime versions via `ARG`.
@@ -144,11 +148,12 @@ Tags are digest-pinned in git, so rollback is a git revert:
 ## Local checks
 
 ```bash
-pixi run lint-all                  # hadolint + shellcheck + actionlint + all policies
+pixi run lint-all                  # hadolint + shellcheck + actionlint + changie length + all policies
 pixi run policy-check              # all OPA/Conftest policies + workflow tag checks
 pixi run policy-check-containerfiles # Containerfile policies only
 pixi run policy-check-image-meta   # image.yaml tag convention checks
 pixi run policy-check-workflow-tags # build workflow tag compliance
+pixi run lint-changie              # changie fragment length (fragments added on this branch)
 pixi run lint-containerfiles       # hadolint only
 pixi run pre-commit-run            # all pre-commit hooks
 pixi run trivy-scan                # Trivy vulnerability scan (CRITICAL/HIGH)
@@ -173,6 +178,32 @@ The same check runs in CI on every PR (`.github/workflows/changelog-check.yml`),
 which the local pre-push hook cannot be made to skip from a forked PR. To skip it
 for a PR that needs no entry, apply the `skip-changelog` label.
 
+### Keep fragments short
+
+**One idea per fragment.** Each fragment `body` has a hard **200-character cap**
+(`.changie.yaml` `body.maxLength`). Changie has no `lint` command, so the cap is
+enforced three ways:
+
+1. `changie new` rejects an over-long body at creation (interactive prompt and
+   `--body` alike).
+2. The `changie fragment length` pre-commit hook (`scripts/check-changie-length.sh`
+   → `scripts/check_changie_length.py`, also `pixi run lint-changie`) re-lints the
+   fragments *added* on your branch — those added since the merge-base with
+   `origin/main` (`CHANGIE_BASE_REF` overrides it, e.g. `upstream/main` on a fork
+   whose `origin/main` is stale), plus any staged as added — catching fragments
+   written directly, bypassing the prompt. `SKIP=changie-length git commit` bypasses
+   the hook for one commit.
+3. CI (`.github/workflows/changelog-check.yml`) re-lints the fragments the PR adds.
+
+The cap is **per fragment, not per change** — there is no limit on how many
+fragments a branch adds, so split a large change into several: run `changie new`
+once per idea (`Added: thing 1`, `Added: thing 2`, …) rather than packing
+everything into one run-on body. Only *added* fragments are linted: released
+versions (`.changes/<version>.md`) and pre-existing unreleased fragments are never
+retroactively flagged. Override the limit for a run with `CHANGIE_MAX_BODY_LENGTH`
+(keep it in sync with `.changie.yaml`). The linter's own tests run locally with
+`pixi run test-changie-length` and in CI as the `changie-length-tests` job.
+
 ## Releasing
 
 A release is a changelog + GitHub Release marker **for the repository**. Container
@@ -188,8 +219,9 @@ partial-failure recovery, one-time repo settings) lives in
 1. Make sure every change you want included has a changie fragment in
    `.changes/unreleased/` (enforced on PRs by `changelog-check.yml`).
 2. **Actions** tab → **"Release — Prepare PR"** → **Run workflow**, entering the
-   `version` as `X.Y.Z` with no leading `v`. Choose it per [SemVer](https://semver.org)
-   and the changie kinds in `.changie.yaml` (`Added`/`Deprecated` → minor,
+   `version` as `X.Y.Z` with no leading `v` and no zero-padded components
+   (`1.0.00` is rejected). Choose it per [SemVer](https://semver.org) and the
+   changie kinds in `.changie.yaml` (`Added`/`Deprecated` → minor,
    `Changed`/`Removed` → major, `Fixed`/`Security` → patch); it must be strictly
    greater than the current `VERSION`.
 3. The workflow batches the changelog, stamps `VERSION` (and `pyproject.toml`), and
@@ -207,6 +239,16 @@ writes authenticate as the `nq-rdl-release-bot` GitHub App (`vars.RELEASE_APP_ID
 pushes to `main` (all release content lands via the merged PR), the App needs no
 branch-protection bypass. See [`docs/branch-protection.md`](docs/branch-protection.md)
 for which status checks gate `main`.
+
+Prepare runs a pinned Changie (`version:` on the `changie-action` step in
+`release-prepare.yml`), so an unchanged workflow always batches the same changelog;
+bump the pin deliberately on a normal PR, and the weekly `changie-pin-check.yml`
+workflow opens a `changie-pin` tracking issue when it falls behind upstream — it
+only notifies. Finalize fails closed rather than guessing: a foreign `v<version>`
+tag, a release without its tag, or a remote lookup error all stop the run, and
+finalize runs share one global FIFO queue so two release PRs merged close together
+cannot race — see the recovery runbook in
+[`docs/releasing.md`](docs/releasing.md#partial-failure-recovery).
 
 ## Smoke tests
 
@@ -265,8 +307,8 @@ SKIP_TRIVY=1 git push
 
 Pre-commit runs automatically on `git commit` and `git push` after hook
 installation. Hooks include: hadolint, shellcheck, actionlint, gitleaks, conftest
-policy checks, changie fragment check, smoke tests, trailing whitespace, and
-end-of-file fixer.
+policy checks, changie fragment check, changie fragment length, smoke tests,
+trailing whitespace, and end-of-file fixer.
 
 | Hook | Stage |
 |------|-------|
@@ -280,6 +322,7 @@ end-of-file fixer.
 | actionlint | commit |
 | conftest | commit |
 | changie fragment reminder | commit |
+| changie fragment length | commit |
 | changie fragment required | push |
 | smoke test (build + container run + k3d) | push |
 | trivy vulnerability scan | push |

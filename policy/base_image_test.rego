@@ -36,3 +36,74 @@ test_denies_dockerhub_base if {
 	]
 	count(msgs) == 1
 }
+
+# A waived vendor base (non_ubi_base_exceptions) -> ALLOWED, in every pin form.
+# The digest-only case is the important one: it is the STRICTER pin, so a waiver that
+# only understood ":tag" would reject it while accepting the looser tagged form.
+test_allows_waived_vendor_base_tag_and_digest if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest@sha256:abc"]},
+	]
+	count(msgs) == 0
+}
+
+test_allows_waived_vendor_base_digest_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook@sha256:abc"]},
+	]
+	count(msgs) == 0
+}
+
+test_allows_waived_vendor_base_tag_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest"]},
+	]
+	count(msgs) == 0
+}
+
+test_allows_waived_vendor_base_bare if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook"]},
+	]
+	count(msgs) == 0
+}
+
+# A look-alike repository that merely shares a waived repo's prefix -> DENIED, in every
+# pin form. Guards the delimiter anchoring in excepted_base: a bare startswith on the
+# repository name alone would waive all of these.
+test_denies_lookalike_of_waived_base_tagged if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork:latest@sha256:abc"]},
+	]
+	count(msgs) == 1
+}
+
+test_denies_lookalike_of_waived_base_digest_only if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork@sha256:abc"]},
+	]
+	count(msgs) == 1
+}
+
+test_denies_lookalike_of_waived_base_bare if {
+	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
+		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook-fork"]},
+	]
+	count(msgs) == 1
+}
+
+# Snapshot of the waiver set.
+#
+# The allowlist is security-relevant configuration, not code: an over-broad entry
+# silently disables the UBI mandate for an entire repository while every other test here
+# still passes, because each one only asserts about a repository it names by hand.
+# Verified: adding "docker.io/library/ubuntu" to non_ubi_base_exceptions leaves all other
+# tests green AND `conftest test` green across all 24 Containerfiles — nothing else
+# catches it.
+#
+# Pinning the exact contents makes growing the waiver a deliberate two-file diff that a
+# reviewer cannot miss. When an entry is legitimately added or removed, update this set
+# in the same commit — and the comment block in base_image.rego naming its tracking issue.
+test_non_ubi_base_exceptions_snapshot if {
+	non_ubi_base_exceptions == {"quay.io/jupyter/datascience-notebook"}
+}

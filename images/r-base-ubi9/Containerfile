@@ -11,7 +11,7 @@
 #          TinyTeX intentionally NOT pre-installed (the downstream `tinytex` R package bootstraps
 #          TeX Live on demand) to keep the base lean. See README for the supply-chain rationale.
 #
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:46d19c10caf9888e8a01131283eaaf50c7f5d4eddab02cd92a66f8adf2e15407
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:b8c53f907b7ea8934d6bb23b319ca7b5ab567e61a0806ffc80170631cabc7563
 
 ARG R_VERSION=4.5.0
 ARG OS_IDENTIFIER=rhel-9
