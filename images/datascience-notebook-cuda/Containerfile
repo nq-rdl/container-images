@@ -3,7 +3,7 @@
 # DL3026: quay.io is not in .hadolint.yaml trustedRegistries (vendor base, kept as-is pending UBI).
 # DL3007: the :latest tag is intentional (lets base-drift re-resolve the tag); the @sha256 digest is the real pin.
 # hadolint ignore=DL3026,DL3007
-FROM quay.io/jupyter/datascience-notebook:latest@sha256:a9350127a6ad3bea2603aabe3c973c5d0fd20ec81d31855b19a6a023c9fc97da
+FROM quay.io/jupyter/datascience-notebook:latest@sha256:20cbe280416d58b27e5fa1353a6ab849853103eca05f9e310608370f266c3dc4
 
 LABEL org.opencontainers.image.title="datascience-notebook-cuda"
 LABEL org.opencontainers.image.description="Jupyter datascience-notebook + CUDA 12.6 runtime + pytorch-gpu (conda-forge). Sensitive-free public base for downstream GPU notebook overlays."

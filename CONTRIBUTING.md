@@ -132,7 +132,11 @@ Tags are digest-pinned in git, so rollback is a git revert:
 ## Containerfile conventions
 
 - Use `Containerfile`, not `Dockerfile`
-- Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`
+- Base image must be from `registry.access.redhat.com/ubi*` or `registry.redhat.io/ubi*`,
+  or be a UBI-rooted `ghcr.io/nq-rdl/*` image from this repo (see *Chained images*).
+  A vendor base with no UBI equivalent needs a reviewed exception in
+  `non_ubi_base_exceptions` (`policy/base_image.rego`), naming the image it covers and a
+  tracking issue for its migration. Adding one is a policy change, not a formality.
 - Pin the base image by digest (`registry.access.redhat.com/ubi9/ubi-minimal:9.5@sha256:…`);
   the `base-drift.yml` workflow opens a PR to bump the digest when the upstream tag moves.
   Pin runtime versions via `ARG`.
