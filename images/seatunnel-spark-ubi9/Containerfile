@@ -1,0 +1,202 @@
+# syntax=docker/dockerfile:1.7
+#
+# Apache SeaTunnel 2.3.13 on Spark 3.3.1 (Azul Zulu 11 JRE) on UBI9-minimal
+# Blueprint: nq-rdl/dataops local-dev/seatunnel/Dockerfile (FROM apache/spark:3.3.1)
+#            + Spark 3.3.1 kubernetes/dockerfiles/spark/Dockerfile
+#            + this catalog's spark-ubi9 and zulu17-jre-headless-ubi9
+# Changes: base swap Debian 11 / OpenJDK 11.0.16 tarball -> UBI9-minimal / Azul Zulu
+#          11.0.32.1 (yum repo, Trivy-visible), apt -> microdnf, SHA-512-pinned Spark
+#          and SeaTunnel tarballs, sha256-pinned tini, named 'spark' user (uid/gid 185),
+#          unused Flink/Spark-2 starters pruned, tini-wrapped pass-through entrypoint.
+#
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
+
+# Azul Zulu major (11 = SeaTunnel 2.3.13's officially supported line; 17 validated too)
+ARG ZULU_MAJOR=11
+# Exact zulu<major>-jre-headless RPM version (Zulu 11.0.32.1 = Aug 2026 PSU)
+ARG ZULU_VERSION=11.0.32.1
+# zulu-repo noarch RPM that registers repos.azulsystems.com (same as zulu17-jre-headless-ubi9)
+ARG ZULU_REPO_VER=1.0.0-1
+# sha256 of zulu-repo-${ZULU_REPO_VER}.noarch.rpm
+ARG ZULU_REPO_SHA256=2724b8be277ec16196b8e9357ed5e506eb791f88f966965a4f4a8bd5c4acdcfe
+# Spark line SeaTunnel 2.3.x officially supports (2.4 / 3.3); 3.3.1 = what dataops runs
+ARG SPARK_VERSION=3.3.1
+# SHA-512 of spark-${SPARK_VERSION}-bin-hadoop3.tgz from archive.apache.org (.sha512 file);
+# used instead of GPG because the release signing key expires 2026-09-01
+ARG SPARK_SHA512=769db39a560a95fd88b58ed3e9e7d1e92fb68ee406689fb4d30c033cb5911e05c1942dcc70e5ec4585df84e80aabbc272b9386a208debda89522efff1335c8ff
+# SeaTunnel release (mirrors dataops pins.tf:seatunnel_version / VERSIONS.md)
+ARG ST_VERSION=2.3.13
+# SHA-512 of apache-seatunnel-${ST_VERSION}-bin.tar.gz (mirrors dataops pins.tf:seatunnel_sha512)
+ARG ST_SHA512=499fc1926a7a6f771b1e4034b6d6a43af028984741ec7745a9f50505a267d7d6b35b164a56be957cb1b0b56afc34e68b917289025244cd86c49d48583cc617e7
+# Zeta -Xms/-Xmx baked into jvm_options + jvm_client_options; mirrors dataops, sized
+# against a 2560Mi pod limit (leaves ~760Mi for metaspace / direct buffers)
+ARG SEATUNNEL_HEAP=1800m
+# tini release and per-arch binary sha256 (github.com/krallin/tini)
+ARG TINI_VERSION=v0.19.0
+ARG TINI_SHA256_AMD64=93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c
+ARG TINI_SHA256_ARM64=07952557df20bfd2a95f9bef198b445e006171969499a1d361bd9e6f8e5e0e81
+# Set automatically by BuildKit/podman from --platform
+ARG TARGETARCH
+# Spark convention (apache/spark images run as 185; dataops charts pin runAsUser 185)
+ARG spark_uid=185
+
+LABEL org.opencontainers.image.title="seatunnel-spark-ubi9"
+LABEL org.opencontainers.image.description="Apache SeaTunnel ${ST_VERSION} (Zeta + Spark ${SPARK_VERSION} engines) with pinned StarRocks/JDBC/Iceberg connectors, Azul Zulu ${ZULU_MAJOR}, on UBI9 minimal"
+LABEL org.opencontainers.image.source="https://github.com/nq-rdl/container-images"
+LABEL org.opencontainers.image.vendor="Research Data Laboratory"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+# LANG=C.UTF-8 keeps parity with the incumbent apache/spark:3.3.1 base.
+ENV LANG=C.UTF-8 \
+    SEATUNNEL_HOME=/opt/seatunnel \
+    SPARK_HOME=/opt/spark \
+    JAVA_HOME=/usr/lib/jvm/zulu${ZULU_MAJOR}
+ENV PATH=${JAVA_HOME}/bin:${SPARK_HOME}/bin:${PATH}
+
+# Azul Zulu yum repo (identical pattern to zulu17-jre-headless-ubi9).
+RUN set -eux; \
+    rpm --import https://repos.azulsystems.com/RPM-GPG-KEY-azulsystems; \
+    curl -fsSL -o /tmp/zulu-repo.rpm \
+        "https://cdn.azul.com/zulu/bin/zulu-repo-${ZULU_REPO_VER}.noarch.rpm"; \
+    echo "${ZULU_REPO_SHA256}  /tmp/zulu-repo.rpm" | sha256sum --strict --check -; \
+    rpm -ivh /tmp/zulu-repo.rpm; \
+    rm -f /tmp/zulu-repo.rpm
+
+# Runtime packages. Beyond ubi-minimal, the SeaTunnel/Spark bin scripts need ps
+# (procps-ng), hostname, tar/gzip/findutils; nss_wrapper + krb5 + pam mirror spark-ubi9.
+RUN microdnf install -y --nodocs \
+        "zulu${ZULU_MAJOR}-jre-headless-${ZULU_VERSION}" \
+        bash \
+        procps-ng \
+        hostname \
+        tar \
+        gzip \
+        findutils \
+        shadow-utils \
+        nss_wrapper \
+        krb5-workstation \
+        pam \
+        tzdata \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+# Named uid 185: Hadoop UserGroupInformation's getpwuid() lookup succeeds without the
+# incumbent's writable-/etc/passwd append (and without running Zeta as root).
+RUN groupadd --system --gid "${spark_uid}" spark \
+    && useradd --system --uid "${spark_uid}" --gid spark --no-create-home \
+        --home-dir /opt/spark --shell /sbin/nologin spark
+
+# tini (not in UBI9 repos) — sha256-pinned per arch.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) TINI_ARCH=amd64; TINI_SHA256="${TINI_SHA256_AMD64}" ;; \
+        arm64) TINI_ARCH=arm64; TINI_SHA256="${TINI_SHA256_ARM64}" ;; \
+        *) echo "Unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/bin/tini \
+        "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_ARCH}"; \
+    echo "${TINI_SHA256}  /usr/bin/tini" | sha256sum --strict --check -; \
+    chmod +x /usr/bin/tini
+
+# Apache Spark — SHA-512-pinned download from the Apache archive. Only jars/, bin/,
+# sbin/, RELEASE and decom.sh are installed (as the upstream kubernetes Dockerfile
+# does); examples/, data/, python/, R/ and kubernetes/tests are intentionally NOT
+# installed — nothing in the SeaTunnel driver/executor use case needs them.
+# hadolint ignore=DL3003
+RUN set -eux; \
+    mkdir -p /opt/spark/work-dir; \
+    SPARK_TMP="$(mktemp -d)"; \
+    cd "${SPARK_TMP}"; \
+    curl -fSL --retry 5 --retry-delay 2 --retry-connrefused -o spark.tgz \
+        "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz"; \
+    echo "${SPARK_SHA512}  spark.tgz" | sha512sum --strict --check -; \
+    tar --no-same-owner -xzf spark.tgz --strip-components=1; \
+    mv jars bin sbin RELEASE /opt/spark/; \
+    mv kubernetes/dockerfiles/spark/decom.sh /opt/decom.sh; \
+    chmod a+x /opt/decom.sh; \
+    cd /; \
+    rm -rf "${SPARK_TMP}"; \
+    chmod g+w /opt/spark/work-dir; \
+    echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su; \
+    chown -R spark:spark /opt/spark
+
+# Apache SeaTunnel — CDN first, archive.apache.org as fallback (it has dropped this
+# ~450 MB transfer mid-stream before); partial bytes are kept between retries and the
+# immutable SHA-512 pin gates either source before extraction.
+RUN set -eux; \
+    tarball="apache-seatunnel-${ST_VERSION}-bin.tar.gz"; \
+    for url in \
+        "https://dlcdn.apache.org/seatunnel/${ST_VERSION}/${tarball}" \
+        "https://archive.apache.org/dist/seatunnel/${ST_VERSION}/${tarball}"; do \
+        if curl -fL --continue-at - --retry 5 --retry-delay 2 --retry-connrefused \
+            --retry-all-errors "${url}" -o /tmp/st.tgz; then \
+            break; \
+        fi; \
+    done; \
+    [ -s /tmp/st.tgz ]; \
+    echo "${ST_SHA512}  /tmp/st.tgz" | sha512sum --strict --check -; \
+    tar --no-same-owner -xzf /tmp/st.tgz -C /opt; \
+    rm -f /tmp/st.tgz; \
+    ln -s "/opt/apache-seatunnel-${ST_VERSION}" "${SEATUNNEL_HOME}"; \
+    # Prune engine starters/launchers no consumer uses (Zeta + Spark 3 only):
+    # -160 MB and 40 fewer CRITICAL/HIGH Trivy findings. Explicit names only —
+    # seatunnel-starter.jar, seatunnel-spark-3-starter.jar and
+    # start-seatunnel-spark-3-connector-v2.sh must survive.
+    cd "${SEATUNNEL_HOME}"; \
+    rm -f \
+        starter/seatunnel-flink-13-starter.jar \
+        starter/seatunnel-flink-15-starter.jar \
+        starter/seatunnel-flink-20-starter.jar \
+        starter/seatunnel-spark-2-starter.jar \
+        bin/start-seatunnel-flink-13-connector-v2.sh \
+        bin/start-seatunnel-flink-15-connector-v2.sh \
+        bin/start-seatunnel-flink-20-connector-v2.sh \
+        bin/start-seatunnel-spark-2-connector-v2.sh \
+        bin/*.cmd \
+        config/seatunnel-env.cmd \
+        mvnw.cmd; \
+    test -f starter/seatunnel-starter.jar; \
+    test -f starter/seatunnel-spark-3-starter.jar; \
+    test -x bin/start-seatunnel-spark-3-connector-v2.sh; \
+    # Zeta heap (mirrors dataops): `-m local` runs the engine inside the CLIENT JVM,
+    # whose stock jvm_client_options carries -Xmx512m; a later -Xmx overrides it, so pin
+    # SEATUNNEL_HEAP in BOTH files. Keep in lockstep with the consumer's memory limit;
+    # override at runtime with -DJvmOption=-Xmx... if needed.
+    printf '\n-Xms%s\n-Xmx%s\n' "${SEATUNNEL_HEAP}" "${SEATUNNEL_HEAP}" >> config/jvm_options; \
+    printf '\n-Xms%s\n-Xmx%s\n' "${SEATUNNEL_HEAP}" "${SEATUNNEL_HEAP}" >> config/jvm_client_options; \
+    # seatunnel-cluster.sh writes ${SEATUNNEL_HOME}/logs/seatunnel-engine-server.log.
+    mkdir -p logs
+
+# Connector + plugin jars not bundled in the -bin tarball (which ships only fake,
+# console, cdc-base): declared in connectors.txt
+# (pin_name|maven_path|artifact|version|dest_subdir|sha512) and SHA-512-verified
+# after download. connectors.txt mirrors dataops connectors.txt / pins.tf / VERSIONS.md.
+# The `|| [ -n "${name}" ]` keeps a final line without a trailing newline from being
+# silently dropped by `read`; the field guard turns a malformed row into a clear error.
+COPY connectors.txt /tmp/connectors.txt
+RUN set -eu; \
+    while IFS='|' read -r name path artifact version dest sha || [ -n "${name}" ]; do \
+        case "${name}" in ''|\#*) continue ;; esac; \
+        if [ -z "${path}" ] || [ -z "${artifact}" ] || [ -z "${version}" ] || [ -z "${dest}" ] || [ -z "${sha}" ]; then \
+            echo "connectors.txt: malformed row for '${name}' (need pin_name|maven_path|artifact|version|dest_subdir|sha512)" >&2; \
+            exit 1; \
+        fi; \
+        jar="${artifact}-${version}.jar"; \
+        out="${SEATUNNEL_HOME}/${dest}/${jar}"; \
+        mkdir -p "${SEATUNNEL_HOME}/${dest}"; \
+        curl -fSL --retry 5 --retry-delay 2 --retry-connrefused \
+            "https://repo1.maven.org/maven2/${path}/${artifact}/${version}/${jar}" \
+            -o "${out}"; \
+        echo "${sha}  ${out}" | sha512sum --strict --check -; \
+    done < /tmp/connectors.txt; \
+    rm -f /tmp/connectors.txt; \
+    chown -R spark:spark "/opt/apache-seatunnel-${ST_VERSION}"
+
+COPY entrypoint.sh /opt/
+
+WORKDIR /opt/spark/work-dir
+
+USER 185
+
+ENTRYPOINT ["/opt/entrypoint.sh"]
