@@ -1,0 +1,3 @@
+kind: Fixed
+body: Repin the Posit R 4.5.0 RPM checksum after upstream rebuilt the same versioned artifact with corrected UBI 9/10 FlexiBLAS dependencies, restoring the r-base and jamovi bake chain.
+time: 2026-09-01T01:57:45+00:00
