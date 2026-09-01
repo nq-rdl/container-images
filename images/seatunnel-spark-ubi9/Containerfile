@@ -111,7 +111,7 @@ RUN set -eux; \
     curl -fSL --retry 5 --retry-delay 2 --retry-connrefused -o spark.tgz \
         "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz"; \
     echo "${SPARK_SHA512}  spark.tgz" | sha512sum --strict --check -; \
-    tar -xzf spark.tgz --strip-components=1; \
+    tar --no-same-owner -xzf spark.tgz --strip-components=1; \
     mv jars bin sbin RELEASE /opt/spark/; \
     mv kubernetes/dockerfiles/spark/decom.sh /opt/decom.sh; \
     chmod a+x /opt/decom.sh; \
@@ -136,7 +136,7 @@ RUN set -eux; \
     done; \
     [ -s /tmp/st.tgz ]; \
     echo "${ST_SHA512}  /tmp/st.tgz" | sha512sum --strict --check -; \
-    tar -xzf /tmp/st.tgz -C /opt; \
+    tar --no-same-owner -xzf /tmp/st.tgz -C /opt; \
     rm -f /tmp/st.tgz; \
     ln -s "/opt/apache-seatunnel-${ST_VERSION}" "${SEATUNNEL_HOME}"; \
     # Prune engine starters/launchers no consumer uses (Zeta + Spark 3 only):
@@ -197,6 +197,6 @@ COPY entrypoint.sh /opt/
 
 WORKDIR /opt/spark/work-dir
 
-USER spark
+USER 185
 
 ENTRYPOINT ["/opt/entrypoint.sh"]

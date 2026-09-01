@@ -1,7 +1,7 @@
 # seatunnel-spark → UBI9 migration review
 
-Status: **draft** (2026-09-01). Findings below are measured; the "after-build" numbers for the new image are still pending (see TODO in the PR).
-
+Status: **validated** (2026-09-01). The final UBI9-minimal 9.8 Containerfile, both Zulu build paths, runtime matrix,
+file-tree parity and after-build Trivy numbers have been checked.
 Context: issue [#69](https://github.com/nq-rdl/container-images/issues/69) / dataops#139 Phase B — publish a prebuilt, digest-pinnable
 replacement for `localdev/seatunnel-spark:2.3.13` (built today by `dataops/local-dev/seatunnel/{Dockerfile,connectors.txt}` from
 `apache/spark:3.3.1`), and decide whether it should be rebased onto UBI9 like the rest of the catalog.
@@ -14,11 +14,13 @@ replacement for `localdev/seatunnel-spark:2.3.13` (built today by `dataops/local
 - **Java: Azul Zulu 11 JRE (11.0.32.1)**, not UBI's OpenJDK 11 (frozen at 11.0.25 since Oct 2024 — Red Hat's free OpenJDK 11
   support ended) and not Java 17 by default (SeaTunnel 2.3.13 officially supports Java 8/11 only). Java 17 is a validated
   build-arg path (`ZULU_MAJOR=17`).
-- **Proven empirically on UBI9-minimal** with both Zulu 11.0.32.1 and Red Hat OpenJDK 17.0.20.1, no script changes:
-  Zeta local (`seatunnel.sh -m local`), Zeta cluster (`seatunnel-cluster.sh` + client submit), Spark 3.3.1 local
-  (`spark-submit … SeaTunnelSpark` and the upstream wrapper), and JDBC driver load for mssql-jdbc 12.8.1.jre11 / mysql-connector-j 8.4.0.
+- **Proven empirically on the final UBI9-minimal 9.8 image** with both Zulu 11.0.32.1 and Zulu 17.0.20.1:
+  Zeta local (`seatunnel.sh -m local`), Zeta cluster with the dataops classpath patch, Spark 3.3.1 local
+  (direct `SeaTunnelSpark` and the upstream wrapper), and JDBC driver load for mssql-jdbc 12.8.1.jre11 / mysql-connector-j 8.4.0.
 - **Zulu catalog images: the pattern yes, chaining no.** `zulu17/21-*-ubi9` force Java 17/21 and the chained-image bake/repin
   machinery; the Azul-repo recipe is copied instead (a future `zulu11-jre-headless-ubi9` image is possible).
+- **Catalog support EOL: 2027-12-31.** This is a forced review date for the legacy SeaTunnel 2.3 / Spark 3.3 stack, not the
+  UBI9 or Zulu 11 support horizon; retaining the image beyond it requires an explicit version/security review.
 
 ## How dataops uses the image (the drop-in contract)
 
@@ -43,23 +45,23 @@ Trivy (vuln scanner, 2026-09-01):
 | base only `apache/spark:3.3.1` | 37 / 279 | 27 / 241 | 27 / 210 | 10 / 69 |
 | base only `ubi9/ubi-minimal:9.6` | 0 / 26 | 0 / 20 | 0 / 26 | – |
 | catalog `spark-ubi9:latest` (reference) | 4 / 101 | 3 / 89 | – | – |
-| **new `seatunnel-spark-ubi9`** | _pending_ | _pending_ | _pending_ | _pending_ |
+| **new `seatunnel-spark-ubi9`** | **54 / 285** | **53 / 274** | **0 / 9** | **54 / 276** |
 
-Trivy flags the incumbent OS as no longer supported. The jar-layer findings come from SeaTunnel 2.3.13 / Spark 3.3.1 and
-carry over to any rebuild — they are a SeaTunnel/Spark version matter, not a base-image matter. The local pre-push
-`trivy-scan.sh` gate (fixable CRITICAL/HIGH incl. jars) is already tripped by existing catalog images (`spark-ubi9`), so this
-image does not introduce a new class of gate failure.
+Trivy flags the incumbent OS as no longer supported. The new image has no CRITICAL OS-package finding and none of its nine
+HIGH OS-package findings has a fix in the enabled repositories. The jar findings come from SeaTunnel 2.3.13, Spark 3.3.1
+and Hadoop 3.1.4 and carry over to any rebuild. They are a version matter, not a base-image matter. The local pre-push
+`trivy-scan.sh` gate flags their fixed-version metadata, as it already does for legacy-stack catalog images.
 
-Spike matrix (UBI9-minimal 9.6 + SeaTunnel 2.3.13 + Spark 3.3.1 + the 7 `connectors.txt` jars, run as UID 185):
+Final-image matrix (UBI9-minimal 9.8 + SeaTunnel 2.3.13 + Spark 3.3.1 + the 7 `connectors.txt` jars, run as UID 185):
 
-| Test | Zulu 11.0.32.1 | Red Hat OpenJDK 17.0.20.1 |
-|------|----------------|---------------------------|
-| Zeta local, FakeSource→Console template | pass (32/32 rows, FINISHED) | pass |
-| Zeta cluster (server + client over 5801) | pass | pass |
-| Spark local[2], direct `spark-submit` of `SeaTunnelSpark` | pass | pass |
+| Test | Zulu 11.0.32.1 | Zulu 17.0.20.1 |
+|------|----------------|----------------|
+| Zeta local, FakeSource→Console template | pass (32/32 rows, FINISHED) | pass (32/32 rows, FINISHED) |
+| Zeta cluster with dataops classpath patch | pass | pass |
+| Spark `local[2]`, direct `SeaTunnelSpark` with Fake/Console `--jars` | pass | pass |
 | Spark local via `start-seatunnel-spark-3-connector-v2.sh` | pass | pass |
-| JDBC load mssql-jdbc / mysql-connector-j (connection-refused = driver loaded) | pass / pass | pass / pass |
-| JPMS symptoms | JDK 11 "illegal reflective access" warnings (same as incumbent) | Hazelcast "modular environment" performance advisory only; silenced by its 6 `--add-opens` flags |
+| JDBC class load, mssql-jdbc / mysql-connector-j | pass / pass | pass / pass |
+| JPMS symptoms | Hazelcast modular-environment advisory + JDK 11 illegal-access warning | Hazelcast modular-environment advisory only |
 
 JDK lifecycle (free, patched builds on UBI9-minimal):
 
@@ -87,19 +89,20 @@ Iceberg REST, StarRocks sink, Kerberos — could hit `InaccessibleObjectExceptio
 
 ## Residual risks / required consumer validation
 
-1. Local spikes did not exercise S3/Garage, real MSSQL/StarRocks/Iceberg REST, the spark-operator executor path, or Kerberos —
+1. Local tests did not exercise S3/Garage, real MSSQL/StarRocks/Iceberg REST, the spark-operator executor path, or Kerberos —
    dataops must run `smoke.sh` blocks against the published digest before switching `up.sh`.
 2. The Azul yum repo (`cdn.azul.com`, `repos.azulsystems.com`) is a build-time third-party dependency (already accepted for the
    catalog's zulu images); the repo rpm is sha256-pinned and GPG-keyed.
 3. `seatunnel-cluster.sh` logs to `$SEATUNNEL_HOME/logs/…` (not stdout) and does not forward SIGTERM to the JVM — identical to the
    incumbent; noted for K8s probes/termination.
-4. Java 17 upgrade needs the Hazelcast `--add-opens` set in `config/jvm_*_options` for the Zeta engine (Spark injects its own).
+4. Before making Java 17 the default, add Hazelcast's six JPMS flags for full internal-API access; the tested path is
+   functional without them but prints its performance advisory.
 5. Spark 3.3.1 release GPG key expired 2026-09-01 → artifacts are SHA-512-pinned instead of GPG-verified.
 
 ## Follow-ups
 
-- dataops cut-over: replace the `up.sh` `docker build` + `k3d image import` with a pull of the published digest; update
-  `pins.tf`/`VERSIONS.md` (`seatunnel_image`, `seatunnel_spark_base_image`); revisit the Zeta Job's `runAsUser: 0`
-  workaround (UID 185 now has a passwd entry).
+- dataops cut-over is tracked in [dataops#362](https://github.com/nq-rdl/dataops/issues/362): replace the `up.sh`
+  `docker build` + `k3d image import` with a pull of the published digest; update `pins.tf`/`VERSIONS.md`
+  (`seatunnel_image`, `seatunnel_spark_base_image`); revisit the Zeta Job's `runAsUser: 0` workaround.
 - Retire jar CVEs by bumping SeaTunnel/Spark when upstream supports it (SeaTunnel PR #11545 raises the Java floor to 11/17).
 - Optional: `zulu11-jre-headless-ubi9` catalog image; arm64 platform.

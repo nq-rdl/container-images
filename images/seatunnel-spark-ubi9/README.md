@@ -44,6 +44,7 @@ Pin by `@sha256:...` digest in production manifests.
 | `JAVA_HOME` | `/usr/lib/jvm/zulu11` |
 | Init | `tini` v0.19.0 at `/usr/bin/tini` |
 | Platforms | linux/amd64 |
+| Catalog support | Stable through 2027-12-31; this is a forced review date for the legacy SeaTunnel 2.3 / Spark 3.3 stack, not the UBI or Zulu EOL |
 
 ## Contents / bill of materials
 
@@ -191,10 +192,11 @@ community builds are free and patched quarterly until January 2032. The Azul
 yum repo is the same mechanism this catalog already uses for
 `zulu17-jre-headless-ubi9`, and the RPM install makes the JDK visible to Trivy.
 
-**Java 17 is validated.** The identical stack (SeaTunnel 2.3.13 + Spark 3.3.1
-+ these connectors) passed Zeta local, Zeta cluster, Spark local and the
-JDBC-driver loads on UBI9 with Java 17. Spark 3.3.1 injects the required
-`--add-opens` for driver and executors on JDK 17. To build it:
+**Java 17 is validated.** The final Containerfile build with Zulu 17.0.20.1
+passed Zeta local, Zeta cluster with the dataops classpath patch, Spark local
+through both direct `SeaTunnelSpark` and the upstream wrapper, and verified
+that the MSSQL and MySQL JDBC drivers load. Spark 3.3.1 injects the required
+`--add-opens` for its driver and executors. To build it:
 
 ```bash
 podman build -f images/seatunnel-spark-ubi9/Containerfile \
@@ -202,8 +204,8 @@ podman build -f images/seatunnel-spark-ubi9/Containerfile \
   -t seatunnel-spark-ubi9:2.3.13-zulu17 images/seatunnel-spark-ubi9
 ```
 
-On 17, Hazelcast prints a "modular environment" performance advisory. It is
-harmless; silence it by adding to `jvm_options` / `jvm_client_options`:
+Both Java 11 and 17 print Hazelcast's "modular environment" performance
+advisory. It is non-fatal; add the following flags for full internal-API access:
 
 ```text
 --add-modules java.se
@@ -214,25 +216,25 @@ harmless; silence it by adding to `jvm_options` / `jvm_client_options`:
 --add-opens jdk.management/com.sun.management.internal=ALL-UNNAMED
 ```
 
-On 11 you see the JDK 11 "illegal reflective access" warnings instead — the
-same ones the incumbent prints.
+Zulu 11 additionally prints the JDK 11 "illegal reflective access" warning
+that the incumbent prints; Zulu 17 does not.
 
 ## Security
 
 - **OS layer.** Trivy on the incumbent reports 29 CRITICAL / 227 HIGH in
   Debian OS packages and warns *"This OS version is no longer supported"*.
-  The UBI9-minimal 9.8 layer plus the Zulu RPM starts from the UBI baseline
-  (0 CRITICAL on `ubi9/ubi-minimal`) and is kept patched by the catalog's
-  base-repin flow.
+  The final UBI9-minimal 9.8 image reports **0 CRITICAL / 9 HIGH** OS-package
+  findings, none fixable in the enabled repositories. The catalog's base-repin
+  flow keeps that layer current.
 - **Java.** The JDK is now an RPM, so it is visible to Trivy and to
   `rpm -qa`; the incumbent's tarball JDK was not scanned at all.
-- **Jars.** CVEs inherited from the SeaTunnel 2.3.13 / Spark 3.3.1 / Hadoop
-  3.1.4 jar sets remain. Pruning the Flink/Spark-2 starters removes about 40
-  CRITICAL/HIGH findings; the rest are a SeaTunnel/Spark version matter, not a
-  base-image matter, and will be addressed by version bumps. The local
-  pre-push `trivy-scan.sh` hook flags any fixable CRITICAL/HIGH including
-  jars, so expect it to fail on this image until upstream ships fixes (as it
-  would for the incumbent).
+- **Jars.** The final image reports **54 CRITICAL / 276 HIGH** jar findings;
+  Trivy marks 53 / 274 respectively as having an upstream fixed version.
+  They are inherited from the SeaTunnel 2.3.13 / Spark 3.3.1 / Hadoop 3.1.4
+  sets. Pruning the unused Flink/Spark-2 starters removes about 40 additional
+  CRITICAL/HIGH findings. The local pre-push `trivy-scan.sh` hook therefore
+  flags this image, as it does existing legacy-stack catalog images; retirement
+  requires a SeaTunnel/Spark version bump rather than an OS-layer workaround.
 - The image runs as non-root uid 185 with no setuid helpers (`pam_wheel`
   restricts `su`).
 
@@ -253,6 +255,8 @@ lifecycle comparison, Java 11 vs 17 spike results, Trivy before/after) is in
 [`docs/seatunnel-spark-ubi9-migration-review.md`](../../docs/seatunnel-spark-ubi9-migration-review.md).
 
 ## Consumer follow-ups (dataops)
+
+Tracked in [dataops#362](https://github.com/nq-rdl/dataops/issues/362).
 
 - Replace the `up.sh` `docker build` + `k3d image import` of
   `localdev/seatunnel-spark:2.3.13` with a digest-pinned pull of
