@@ -47,7 +47,7 @@ attempt_setup_fake_passwd_entry() {
 }
 
 if [ -z "$JAVA_HOME" ]; then
-  JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 > /dev/null | grep 'java.home' | awk '{print $3}')
+  JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 | awk '$1 == "java.home" { print $3; exit }')
 fi
 
 SPARK_CLASSPATH="$SPARK_CLASSPATH:${SPARK_HOME}/jars/*"

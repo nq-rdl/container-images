@@ -188,7 +188,7 @@ RUN set -eu; \
         curl -fSL --retry 5 --retry-delay 2 --retry-connrefused \
             "https://repo1.maven.org/maven2/${path}/${artifact}/${version}/${jar}" \
             -o "${out}"; \
-        echo "${sha}  ${out}" | sha512sum -c -; \
+        echo "${sha}  ${out}" | sha512sum --strict --check -; \
     done < /tmp/connectors.txt; \
     rm -f /tmp/connectors.txt; \
     chown -R spark:spark "/opt/apache-seatunnel-${ST_VERSION}"
