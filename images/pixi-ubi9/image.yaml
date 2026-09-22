@@ -1,0 +1,20 @@
+name: pixi-ubi9
+description: Pixi package manager on UBI9 minimal
+owners:
+  - nq-rdl/platform
+platforms:
+  - linux/amd64
+  - linux/arm64
+base:
+  registry: registry.access.redhat.com
+  repository: ubi9/ubi-minimal
+  version: "9.8"
+runtime:
+  name: pixi
+  version: "0.74.0"
+tags:
+  - "0.74"
+  - "0.74.0"
+  - "latest"
+support:
+  status: stable
