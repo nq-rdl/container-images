@@ -1,9 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: docker
-    directory: /images/pixi-ubi9
-    schedule:
-      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
