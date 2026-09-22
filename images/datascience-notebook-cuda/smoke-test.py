@@ -28,8 +28,12 @@ assert torch.version.cuda == "12.6", torch.version.cuda
 assert torch.backends.cudnn.is_available(), "cuDNN is missing"
 assert torch.backends.cudnn.version(), "cuDNN could not be loaded"
 assert torch.ones(3).sum().item() == 3
-print(f"UBI9: PyTorch {torch.__version__}, CUDA {torch.version.cuda}, "
-      f"cuDNN {torch.backends.cudnn.version()}")
+print(
+    f"UBI9: JupyterLab {jupyterlab.__version__}, NumPy {numpy.__version__}, "
+    f"pandas {pandas.__version__}, SciPy {scipy.__version__}, "
+    f"scikit-learn {sklearn.__version__}, PyTorch {torch.__version__}, "
+    f"CUDA {torch.version.cuda}, cuDNN {torch.backends.cudnn.version()}"
+)
 
 if args.gpu:
     assert torch.cuda.is_available(), "No working CUDA device; check host driver and CDI"
