@@ -23,10 +23,8 @@ import data.helpers
 # than splitting on ":" also keeps a registry port (host:5000/repo) from being mistaken
 # for a tag.
 #
-#   quay.io/jupyter/datascience-notebook -> images/datascience-notebook-cuda
-#     Upstream Jupyter CUDA stack; no UBI-based equivalent is published. Added in #71,
-#     which also carries a matching hadolint DL3026 waiver. Migration tracked in #84.
-non_ubi_base_exceptions := {"quay.io/jupyter/datascience-notebook"}
+# No vendor exceptions remain. Any future entry requires a tracked migration.
+non_ubi_base_exceptions := set()
 
 excepted_base(val) if {
 	some repo in non_ubi_base_exceptions

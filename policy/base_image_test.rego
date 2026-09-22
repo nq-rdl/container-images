@@ -37,35 +37,33 @@ test_denies_dockerhub_base if {
 	count(msgs) == 1
 }
 
-# A waived vendor base (non_ubi_base_exceptions) -> ALLOWED, in every pin form.
-# The digest-only case is the important one: it is the STRICTER pin, so a waiver that
-# only understood ":tag" would reject it while accepting the looser tagged form.
-test_allows_waived_vendor_base_tag_and_digest if {
+# The former vendor base is denied in every pin form after its UBI9 migration.
+test_denies_former_vendor_base_tag_and_digest if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest@sha256:abc"]},
 	]
-	count(msgs) == 0
+	count(msgs) == 1
 }
 
-test_allows_waived_vendor_base_digest_only if {
+test_denies_former_vendor_base_digest_only if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook@sha256:abc"]},
 	]
-	count(msgs) == 0
+	count(msgs) == 1
 }
 
-test_allows_waived_vendor_base_tag_only if {
+test_denies_former_vendor_base_tag_only if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook:latest"]},
 	]
-	count(msgs) == 0
+	count(msgs) == 1
 }
 
-test_allows_waived_vendor_base_bare if {
+test_denies_former_vendor_base_bare if {
 	msgs := {m | some m in deny; contains(m, "Final FROM")} with input as [
 		{"Cmd": "from", "Value": ["quay.io/jupyter/datascience-notebook"]},
 	]
-	count(msgs) == 0
+	count(msgs) == 1
 }
 
 # A look-alike repository that merely shares a waived repo's prefix -> DENIED, in every
@@ -105,5 +103,5 @@ test_denies_lookalike_of_waived_base_bare if {
 # reviewer cannot miss. When an entry is legitimately added or removed, update this set
 # in the same commit — and the comment block in base_image.rego naming its tracking issue.
 test_non_ubi_base_exceptions_snapshot if {
-	non_ubi_base_exceptions == {"quay.io/jupyter/datascience-notebook"}
+	non_ubi_base_exceptions == set()
 }
