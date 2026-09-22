@@ -1,0 +1,15 @@
+# seatunnel-spark-ubi9 connector/plugin manifest — drives the Containerfile download loop.
+# Mirrors nq-rdl/dataops local-dev/seatunnel/connectors.txt, which is drift-checked there
+# against pins.tf, VERSIONS.md and DEPS_JARS; bump this file, dataops connectors.txt,
+# pins.tf and VERSIONS.md together on a version change.
+# Format: pin_name|maven_path|artifact|version|dest_subdir|sha512
+# URL = https://repo1.maven.org/maven2/${maven_path}/${artifact}/${version}/${artifact}-${version}.jar
+# dest_subdir is relative to SEATUNNEL_HOME (/opt/seatunnel).
+# The apache-seatunnel -bin tarball keeps its own pinned ARG/RUN in the Containerfile.
+seatunnel_connector_starrocks|org/apache/seatunnel|connector-starrocks|2.3.13|connectors|64062619515b898565a806d37c302b7d741bb4fe6663da1065085fa9a0a1cdc037fb207eff91a64454dfee1fda111d28986d92ea63d1f31af5906cfcd81d8415
+seatunnel_connector_jdbc|org/apache/seatunnel|connector-jdbc|2.3.13|connectors|5ab7c89f2a7ba4a5dda1d9722218abe01a4e9bc3629304749e15cecf5a92d35c38d81325c7efd5a8a38c3df752cb2da176da88153868f130ef76e52092f16820
+seatunnel_connector_iceberg|org/apache/seatunnel|connector-iceberg|2.3.13|connectors|5d283154d969cff8d946fa2b81d2105e174eb837eeb8d41ac5010a0cdaded929f8eac6cf3cc69d97658ffa5d3706dfa5f4eaaae6d42c0a66bba9eae2c8ac0c6b
+iceberg_spark_runtime_33|org/apache/iceberg|iceberg-spark-runtime-3.3_2.12|1.8.1|plugins|3ef9ed6b1297a6ad0467483958998e62a9f1207dd93edea577b0b2f53f12b64de84743464460a21751e871c1261d671e452a88b6481284eacefc4defc7cda474
+iceberg_aws_bundle_33|org/apache/iceberg|iceberg-aws-bundle|1.8.1|plugins|ba928446b65c2fe030beddb827acab12db9f38e17620a29dc82041bae9b556f2266df76f40f78070192db265545fdf6e75e0b149548e52dc06c81ea98c1a1058
+mysql_jdbc|com/mysql|mysql-connector-j|8.4.0|plugins|02f4b5a07b9d34106ae85ee6f41b23c4182dab4925a5200e70c75a71d6e9b97369de2904c17a7b77ed3c14db755237848c65f7af0d5c0bc7a2b3e5802e4127f1
+mssql_jdbc|com/microsoft/sqlserver|mssql-jdbc|12.8.1.jre11|plugins|b5bca144f5150b9be01ba165b8561b7ce1cf4c0a63c8873f82d904102737fa8a8dc5fd7e2a275b6fcc36ae0ebb898664ecf3ab5661d98a6267abc923b7d6862a

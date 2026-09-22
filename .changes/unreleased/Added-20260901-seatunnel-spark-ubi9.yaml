@@ -1,0 +1,3 @@
+kind: Added
+body: 'seatunnel-spark-ubi9: add SeaTunnel 2.3.13 with Zeta and Spark 3.3.1 on UBI9-minimal 9.8, Zulu 11, and SHA-512-pinned connectors as a published replacement for the dataops-built image.'
+time: 2026-09-01T01:45:00.000000000+10:00
