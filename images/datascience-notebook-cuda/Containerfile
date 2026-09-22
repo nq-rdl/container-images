@@ -2,6 +2,8 @@
 
 # UBI9-rooted SciPy notebook; retain the existing CUDA image name for consumers.
 ARG BASE_CONTAINER=ghcr.io/nq-rdl/scipy-notebook-ubi9:2026.6.0@sha256:5d7ed4885cdf9af075340af5e035753a333d5d69e358e0e226b555c8ccbb981a
+# Hadolint cannot resolve this ARG; chained-base policy checks enforce its default pin.
+# hadolint ignore=DL3026
 FROM ${BASE_CONTAINER}
 
 LABEL org.opencontainers.image.title="datascience-notebook-cuda"
