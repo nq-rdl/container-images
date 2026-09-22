@@ -1,1 +1,1 @@
-python -c __import__('torch')
+python /usr/local/bin/cuda-smoke-test.py
