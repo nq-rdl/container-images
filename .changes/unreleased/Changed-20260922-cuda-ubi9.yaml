@@ -1,3 +1,0 @@
-kind: Changed
-body: CUDA notebooks use UBI9 with locked CUDA 12.6 dependencies — the Python SciPy stack replaces vendor R and Julia kernels (#84)
-time: 2026-09-22T04:51:06.59665999Z
