@@ -13,7 +13,7 @@ on:
 jobs:
   triage:
     if: github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository
-    uses: nq-rdl/.github/.github/workflows/auto-triage.yml@e20fa963eb48d59bad1060af89b694642eaddb7f
+    uses: nq-rdl/.github/.github/workflows/auto-triage.yml@7165568a22c4eb823a6424593d921edd0f30a29d
     with:
       domain: Infrastructure
     secrets: inherit
