@@ -10,7 +10,7 @@
 #          unused Flink/Spark-2 starters pruned, tini-wrapped pass-through entrypoint.
 #
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:8fbe5ca09afa1990e9ff55fd8ee7cb073b823a7640c3c8381ece64f22401d2a2
 
 # Azul Zulu major (11 = SeaTunnel 2.3.13's officially supported line; 17 validated too)
 ARG ZULU_MAJOR=11
