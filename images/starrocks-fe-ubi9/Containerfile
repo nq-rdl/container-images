@@ -20,7 +20,7 @@ FROM docker.io/starrocks/artifacts-centos7:3.3.22@sha256:ccdf388ffe57a6dab771b95
 # hadolint ignore=DL3006,DL3026
 FROM artifacts-${STARROCKS_VERSION} AS artifacts
 
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:9295c5c688f487fa5cf27a734fa55ecd57aeb7dc0904ba537da4f42dfa1d0acb
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:866c52a4f649b2e027e0eafeede5f37dd13ac58ab63bbe2950d7928334312a4c
 
 ARG STARROCKS_VERSION
 ARG STARROCKS_ROOT=/opt/starrocks
