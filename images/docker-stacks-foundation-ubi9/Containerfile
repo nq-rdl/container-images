@@ -7,7 +7,7 @@
 #          committed pixi.lock; NB_GID 100 -> 0 (OpenShift arbitrary-UID model);
 #          tini installed as a pinned static binary; conda-activate hook dropped (PATH-based).
 #
-FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:9295c5c688f487fa5cf27a734fa55ecd57aeb7dc0904ba537da4f42dfa1d0acb
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:217dd5692d369799d34d09ffb6f5f3404efebc7900834490fdf9ae92fd6721d4
 
 ARG NB_USER="jovyan"
 ARG NB_UID="1000"
